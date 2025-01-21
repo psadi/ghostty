@@ -452,6 +452,7 @@ class BaseTerminalController: NSWindowController,
             self.alert = nil
             switch (response) {
             case .alertFirstButtonReturn:
+                alert.window.orderOut(nil)
                 window.close()
 
             default:

@@ -579,7 +579,7 @@ fn closeTab(_: *App, target: apprt.Target) !void {
                 return;
             };
 
-            tab.window.closeTab(tab);
+            tab.closeWithConfirmation();
         },
     }
 }
@@ -1881,16 +1881,14 @@ fn initContextMenu(self: *App) void {
         c.g_menu_append(section, "Terminal Inspector", "win.toggle_inspector");
     }
 
-    if (!self.config.@"window-decoration".isCSD()) {
-        const section = c.g_menu_new();
-        defer c.g_object_unref(section);
-        const submenu = c.g_menu_new();
-        defer c.g_object_unref(submenu);
+    const section = c.g_menu_new();
+    defer c.g_object_unref(section);
+    const submenu = c.g_menu_new();
+    defer c.g_object_unref(submenu);
 
-        initMenuContent(@ptrCast(submenu));
-        c.g_menu_append_submenu(section, "Menu", @ptrCast(@alignCast(submenu)));
-        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
-    }
+    initMenuContent(@ptrCast(submenu));
+    c.g_menu_append_submenu(section, "Menu", @ptrCast(@alignCast(submenu)));
+    c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
 
     self.context_menu = menu;
 }

@@ -251,7 +251,6 @@ pub const Program = struct {
         const program = try gl.Program.createVF(
             @embedFile("../shaders/custom.v.glsl"),
             src,
-            //@embedFile("../shaders/temp.f.glsl"),
         );
         errdefer program.destroy();
 

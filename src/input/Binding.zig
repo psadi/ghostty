@@ -419,7 +419,7 @@ pub const Action = union(enum) {
     /// is preserved between appearances, so you can always press the keybinding
     /// to bring it back up.
     ///
-    /// To enable the quick terminally globally so that Ghostty doesn't
+    /// To enable the quick terminal globally so that Ghostty doesn't
     /// have to be focused, prefix your keybind with `global`. Example:
     ///
     /// ```ini

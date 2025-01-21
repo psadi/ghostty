@@ -22,6 +22,8 @@ pub const App = struct {
         // FIXME: replace with `zxdg_decoration_v1` once GTK merges
         // https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/6398
         kde_decoration_manager: ?*org.KdeKwinServerDecorationManager = null,
+
+        default_deco_mode: ?org.KdeKwinServerDecorationManager.Mode = null,
     };
 
     pub fn init(
@@ -57,6 +59,12 @@ pub const App = struct {
         registry.setListener(*Context, registryListener, context);
         if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
 
+        if (context.kde_decoration_manager != null) {
+            // FIXME: Roundtrip again because we have to wait for the decoration
+            // manager to respond with the preferred default mode. Ew.
+            if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
+        }
+
         return .{
             .display = display,
             .context = context,
@@ -82,25 +90,22 @@ pub const App = struct {
     ) void {
         switch (event) {
             // https://wayland.app/protocols/wayland#wl_registry:event:global
-            .global => |global| global: {
+            .global => |global| {
                 log.debug("wl_registry.global: interface={s}", .{global.interface});
 
                 if (registryBind(
                     org.KdeKwinBlurManager,
                     registry,
                     global,
-                    1,
                 )) |blur_manager| {
                     context.kde_blur_manager = blur_manager;
-                    break :global;
                 } else if (registryBind(
                     org.KdeKwinServerDecorationManager,
                     registry,
                     global,
-                    1,
                 )) |deco_manager| {
                     context.kde_decoration_manager = deco_manager;
-                    break :global;
+                    deco_manager.setListener(*Context, decoManagerListener, context);
                 }
             },
 
@@ -119,7 +124,6 @@ pub const App = struct {
         comptime T: type,
         registry: *wl.Registry,
         global: anytype,
-        version: u32,
     ) ?*T {
         if (std.mem.orderZ(
             u8,
@@ -127,13 +131,25 @@ pub const App = struct {
             T.interface.name,
         ) != .eq) return null;
 
-        return registry.bind(global.name, T, version) catch |err| {
+        return registry.bind(global.name, T, T.generated_version) catch |err| {
             log.warn("error binding interface {s} error={}", .{
                 global.interface,
                 err,
             });
             return null;
         };
+    }
+
+    fn decoManagerListener(
+        _: *org.KdeKwinServerDecorationManager,
+        event: org.KdeKwinServerDecorationManager.Event,
+        context: *Context,
+    ) void {
+        switch (event) {
+            .default_mode => |mode| {
+                context.default_deco_mode = @enumFromInt(mode.mode);
+            },
+        }
     }
 };
 
@@ -235,13 +251,14 @@ pub const Window = struct {
     }
 
     pub fn clientSideDecorationEnabled(self: Window) bool {
-        // Note: we should change this to being the actual mode
-        // state emitted by the decoration manager.
+        // Compositor doesn't support the SSD protocol
+        if (self.decoration == null) return true;
 
-        // We are CSD if we don't support the SSD Wayland protocol
-        // or if we do but we're in CSD mode.
-        return self.decoration == null or
-            self.config.window_decoration.isCSD();
+        return switch (self.getDecorationMode()) {
+            .Client => true,
+            .Server, .None => false,
+            else => unreachable,
+        };
     }
 
     /// Update the blur state of the window.
@@ -269,14 +286,17 @@ pub const Window = struct {
     fn syncDecoration(self: *Window) !void {
         const deco = self.decoration orelse return;
 
-        const mode: org.KdeKwinServerDecoration.Mode = switch (self.config.window_decoration) {
+        // The protocol requests uint instead of enum so we have
+        // to convert it.
+        deco.requestMode(@intCast(@intFromEnum(self.getDecorationMode())));
+    }
+
+    fn getDecorationMode(self: Window) org.KdeKwinServerDecorationManager.Mode {
+        return switch (self.config.window_decoration) {
+            .auto => self.app_context.default_deco_mode orelse .Client,
             .client => .Client,
             .server => .Server,
             .none => .None,
         };
-
-        // The protocol requests uint instead of enum so we have
-        // to convert it.
-        deco.requestMode(@intCast(@intFromEnum(mode)));
     }
 };

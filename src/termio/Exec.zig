@@ -875,7 +875,11 @@ const Subprocess = struct {
             };
 
             const force: ?shell_integration.Shell = switch (cfg.shell_integration) {
-                .none => break :shell .{ null, default_shell_command },
+                .none => {
+                    // Even if shell integration is none, we still want to set up the feature env vars
+                    try shell_integration.setupFeatures(&env, cfg.shell_integration_features);
+                    break :shell .{ null, default_shell_command };
+                },
                 .detect => null,
                 .bash => .bash,
                 .elvish => .elvish,
@@ -971,12 +975,12 @@ const Subprocess = struct {
                 // which we may not want. If we specify "-l" then we can avoid
                 // this behavior but now the shell isn't a login shell.
                 //
-                // There is another issue: `login(1)` only checks for ".hushlogin"
-                // in the working directory. This means that if we specify "-l"
-                // then we won't get hushlogin honored if its in the home
-                // directory (which is standard). To get around this, we
-                // check for hushlogin ourselves and if present specify the
-                // "-q" flag to login(1).
+                // There is another issue: `login(1)` on macOS 14.3 and earlier
+                // checked for ".hushlogin" in the working directory. This means
+                // that if we specify "-l" then we won't get hushlogin honored
+                // if its in the home directory (which is standard). To get
+                // around this, we check for hushlogin ourselves and if present
+                // specify the "-q" flag to login(1).
                 //
                 // So to get all the behaviors we want, we specify "-l" but
                 // execute "bash" (which is built-in to macOS). We then use

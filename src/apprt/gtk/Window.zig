@@ -584,8 +584,8 @@ pub fn toggleFullscreen(self: *Window) void {
 /// Toggle the window decorations for this window.
 pub fn toggleWindowDecorations(self: *Window) void {
     self.app.config.@"window-decoration" = switch (self.app.config.@"window-decoration") {
-        .client, .server => .none,
-        .none => .server,
+        .auto, .client, .server => .none,
+        .none => .client,
     };
     self.updateConfig(&self.app.config) catch {};
 }
@@ -640,6 +640,11 @@ fn gtkWindowNotifyMaximized(
 ) callconv(.C) void {
     const self = userdataSelf(ud orelse return);
     const maximized = c.gtk_window_is_maximized(self.window) != 0;
+
+    // Only toggle visibility of the header bar when we're using CSDs,
+    // and actually intend on displaying the header bar
+    if (!self.winproto.clientSideDecorationEnabled()) return;
+
     if (!maximized) {
         self.headerbar.setVisible(true);
         return;

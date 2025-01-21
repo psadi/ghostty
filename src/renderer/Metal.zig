@@ -1046,19 +1046,6 @@ pub fn updateFrame(
             }
         }
 
-        // If our terminal screen size doesn't match our expected renderer
-        // size then we skip a frame. This can happen if the terminal state
-        // is resized between when the renderer mailbox is drained and when
-        // the state mutex is acquired inside this function.
-        //
-        // For some reason this doesn't seem to cause any significant issues
-        // with flickering while resizing. '\_('-')_/'
-        if (self.cells.size.rows != state.terminal.rows or
-            self.cells.size.columns != state.terminal.cols)
-        {
-            return;
-        }
-
         // Get the viewport pin so that we can compare it to the current.
         const viewport_pin = state.terminal.screen.pages.pin(.{ .viewport = .{} }).?;
 
@@ -2437,12 +2424,22 @@ fn rebuildCells(
         }
     }
 
-    // Go row-by-row to build the cells. We go row by row because we do
-    // font shaping by row. In the future, we will also do dirty tracking
-    // by row.
+    // We rebuild the cells row-by-row because we
+    // do font shaping and dirty tracking by row.
     var row_it = screen.pages.rowIterator(.left_up, .{ .viewport = .{} }, null);
-    var y: terminal.size.CellCountInt = screen.pages.rows;
+    // If our cell contents buffer is shorter than the screen viewport,
+    // we render the rows that fit, starting from the bottom. If instead
+    // the viewport is shorter than the cell contents buffer, we align
+    // the top of the viewport with the top of the contents buffer.
+    var y: terminal.size.CellCountInt = @min(
+        screen.pages.rows,
+        self.cells.size.rows,
+    );
     while (row_it.next()) |row| {
+        // The viewport may have more rows than our cell contents,
+        // so we need to break from the loop early if we hit y = 0.
+        if (y == 0) break;
+
         y -= 1;
 
         if (!rebuild) {
@@ -2501,7 +2498,11 @@ fn rebuildCells(
         var shaper_cells: ?[]const font.shape.Cell = null;
         var shaper_cells_i: usize = 0;
 
-        const row_cells = row.cells(.all);
+        const row_cells_all = row.cells(.all);
+
+        // If our viewport is wider than our cell contents buffer,
+        // we still only process cells up to the width of the buffer.
+        const row_cells = row_cells_all[0..@min(row_cells_all.len, self.cells.size.columns)];
 
         for (row_cells, 0..) |*cell, x| {
             // If this cell falls within our preedit range then we

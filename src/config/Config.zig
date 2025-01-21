@@ -1138,27 +1138,33 @@ keybind: Keybinds = .{},
 ///     borders, etc. will not be shown. On macOS, this will also disable
 ///     tabs (enforced by the system).
 ///
-///   * `client` - Prefer client-side decorations. This is the default.
+///   * `auto` - Automatically decide to use either client-side or server-side
+///     decorations based on the detected preferences of the current OS and
+///     desktop environment. This option usually makes Ghostty look the most
+///     "native" for your desktop.
+///
+///   * `client` - Prefer client-side decorations.
 ///
 ///   * `server` - Prefer server-side decorations. This is only relevant
 ///     on Linux with GTK. This currently only works on Linux with Wayland
 ///     and the `org_kde_kwin_server_decoration` protocol available (e.g.
-///     KDE Plasma, but almost any non-Gnome desktop supports this protocol).
+///     KDE Plasma, but almost any non-GNOME desktop supports this protocol).
 ///
 ///     If `server` is set but the environment doesn't support server-side
 ///     decorations, client-side decorations will be used instead.
 ///
-/// The default value is `client`.
+/// The default value is `auto`.
 ///
-/// This setting also accepts boolean true and false values. If set to `true`,
-/// this is equivalent to `client`. If set to `false`, this is equivalent to
-/// `none`. This is a convenience for users who live primarily on systems
-/// that don't differentiate between client and server-side decorations
-/// (e.g. macOS and Windows).
+/// For the sake of backwards compatibility and convenience, this setting also
+/// accepts boolean true and false values. If set to `true`, this is equivalent
+/// to `auto`. If set to `false`, this is equivalent to `none`.
+/// This is convenient for users who live primarily on systems that don't
+/// differentiate between client and server-side decorations (e.g. macOS and
+/// Windows).
 ///
 /// The "toggle_window_decorations" keybind action can be used to create
 /// a keybinding to toggle this setting at runtime. This will always toggle
-/// back to "server" if the current value is "none" (this is an issue
+/// back to "auto" if the current value is "none" (this is an issue
 /// that will be fixed in the future).
 ///
 /// Changing this configuration in your configuration and reloading will
@@ -1166,7 +1172,7 @@ keybind: Keybinds = .{},
 ///
 /// macOS: To hide the titlebar without removing the native window borders
 ///        or rounded corners, use `macos-titlebar-style = hidden` instead.
-@"window-decoration": WindowDecoration = .client,
+@"window-decoration": WindowDecoration = .auto,
 
 /// The font that will be used for the application's window and tab titles.
 ///
@@ -1664,7 +1670,9 @@ keybind: Keybinds = .{},
 /// The default value is `detect`.
 @"shell-integration": ShellIntegration = .detect,
 
-/// Shell integration features to enable if shell integration itself is enabled.
+/// Shell integration features to enable. These require our shell integration
+/// to be loaded, either automatically via shell-integration or manually.
+///
 /// The format of this is a list of features to enable separated by commas. If
 /// you prefix a feature with `no-` then it is disabled. If you omit a feature,
 /// its default value is used, so you must explicitly disable features you don't
@@ -5917,32 +5925,20 @@ pub const BackgroundBlur = union(enum) {
 
 /// See window-decoration
 pub const WindowDecoration = enum {
+    auto,
     client,
     server,
     none,
 
     pub fn parseCLI(input_: ?[]const u8) !WindowDecoration {
-        const input = input_ orelse return .client;
+        const input = input_ orelse return .auto;
 
         return if (cli.args.parseBool(input)) |b|
-            if (b) .client else .none
+            if (b) .auto else .none
         else |_| if (std.meta.stringToEnum(WindowDecoration, input)) |v|
             v
         else
             error.InvalidValue;
-    }
-
-    /// Returns true if the window decoration setting results in
-    /// CSD (client-side decorations). Note that this only returns the
-    /// user requested behavior. Depending on available APIs (e.g.
-    /// Wayland protocols), the actual behavior may differ and the apprt
-    /// should rely on actual windowing APIs to determine the actual
-    /// status.
-    pub fn isCSD(self: WindowDecoration) bool {
-        return switch (self) {
-            .client => true,
-            .server, .none => false,
-        };
     }
 
     test "parse WindowDecoration" {
@@ -5950,11 +5946,11 @@ pub const WindowDecoration = enum {
 
         {
             const v = try WindowDecoration.parseCLI(null);
-            try testing.expectEqual(WindowDecoration.client, v);
+            try testing.expectEqual(WindowDecoration.auto, v);
         }
         {
             const v = try WindowDecoration.parseCLI("true");
-            try testing.expectEqual(WindowDecoration.client, v);
+            try testing.expectEqual(WindowDecoration.auto, v);
         }
         {
             const v = try WindowDecoration.parseCLI("false");
@@ -5967,6 +5963,10 @@ pub const WindowDecoration = enum {
         {
             const v = try WindowDecoration.parseCLI("client");
             try testing.expectEqual(WindowDecoration.client, v);
+        }
+        {
+            const v = try WindowDecoration.parseCLI("auto");
+            try testing.expectEqual(WindowDecoration.auto, v);
         }
         {
             const v = try WindowDecoration.parseCLI("none");

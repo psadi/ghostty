@@ -139,7 +139,7 @@ float4 load_color(
   // already have the correct color here and
   // can premultiply and return it.
   if (display_p3 && !linear) {
-    color *= color.a;
+    color.rgb *= color.a;
     return color;
   }
 
@@ -167,7 +167,7 @@ float4 load_color(
   }
 
   // Premultiply our color by its alpha.
-  color *= color.a;
+  color.rgb *= color.a;
 
   return color;
 }
@@ -248,7 +248,15 @@ fragment float4 cell_bg_fragment(
 ) {
   int2 grid_pos = int2(floor((in.position.xy - uniforms.grid_padding.wx) / uniforms.cell_size));
 
-  float4 bg = in.bg_color;
+  float4 bg = float4(0.0);
+  // If we have any background transparency then we render bg-colored cells as
+  // fully transparent, since the background is handled by the layer bg color
+  // and we don't want to double up our bg color, but if our bg color is fully
+  // opaque then our layer is opaque and can't handle transparency, so we need
+  // to return the bg color directly instead.
+  if (uniforms.bg_color.a == 255) {
+    bg = in.bg_color;
+  }
 
   // Clamp x position, extends edge bg colors in to padding on sides.
   if (grid_pos.x < 0) {
@@ -285,16 +293,7 @@ fragment float4 cell_bg_fragment(
 
   // We have special case handling for when the cell color matches the bg color.
   if (all(cell_color == uniforms.bg_color)) {
-    // If we have any background transparency then we render bg-colored cells as
-    // fully transparent, since the background is handled by the layer bg color
-    // and we don't want to double up our bg color, but if our bg color is fully
-    // opaque then our layer is opaque and can't handle transparency, so we need
-    // to return the bg color directly instead.
-    if (uniforms.bg_color.a == 255) {
-      return bg;
-    } else {
-      return float4(0.0);
-    }
+    return bg;
   }
 
   // Convert the color and return it.
@@ -504,12 +503,12 @@ fragment float4 cell_text_fragment(
       // If we're not doing linear blending, then we need to
       // re-apply the gamma encoding to our color manually.
       //
-      // We do it BEFORE premultiplying the alpha because
-      // we want to produce the effect of not linearizing
-      // it in the first place in order to match the look
-      // of software that never does this.
+      // Since the alpha is premultiplied, we need to divide
+      // it out before unlinearizing and re-multiply it after.
       if (!uniforms.use_linear_blending) {
+        color.rgb /= color.a;
         color = unlinearize(color);
+        color.rgb *= color.a;
       }
 
       // Fetch our alpha mask for this pixel.

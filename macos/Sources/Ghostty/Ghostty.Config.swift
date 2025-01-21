@@ -562,10 +562,11 @@ extension Ghostty.Config {
         case none
         case client
         case server
+        case auto
 
         func enabled() -> Bool {
             switch self {
-            case .client, .server: return true
+            case .client, .server, .auto: return true
             case .none: return false
             }
         }

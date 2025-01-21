@@ -65,6 +65,7 @@ pub fn packStart(self: HeaderBarAdw, widget: *c.GtkWidget) void {
 }
 
 pub fn setTitle(self: HeaderBarAdw, title: [:0]const u8) void {
+    c.gtk_window_set_title(self.window.window, title);
     if (comptime adwaita.versionAtLeast(0, 0, 0)) {
         c.adw_window_title_set_title(self.title, title);
     }

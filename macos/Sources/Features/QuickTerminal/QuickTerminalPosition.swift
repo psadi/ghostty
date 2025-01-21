@@ -69,7 +69,7 @@ enum QuickTerminalPosition : String {
             finalSize.width = screen.frame.width
 
         case .left, .right:
-            finalSize.height = screen.frame.height
+            finalSize.height = screen.visibleFrame.height
 
         case .center:
             finalSize.width = screen.frame.width / 2

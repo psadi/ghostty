@@ -168,7 +168,7 @@ pub const Window = struct {
                 .blur = config.@"background-blur-radius".enabled(),
                 .has_decoration = switch (config.@"window-decoration") {
                     .none => false,
-                    .client, .server => true,
+                    .auto, .client, .server => true,
                 },
             };
         }
