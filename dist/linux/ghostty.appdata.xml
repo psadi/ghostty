@@ -12,28 +12,12 @@
       Ghostty is a terminal emulator that differentiates itself by being fast,
       feature-rich, and native. While there are many excellent terminal
       emulators available, they all force you to choose between speed,
-      features, or native UIs.  Ghostty provides all three.
+      features, or native UIs. Ghostty provides all three.
     </p>
-
-    <p>
-      In all categories, I am not trying to claim that Ghostty is the best
-      (i.e. the fastest, most feature-rich, or most native). But Ghostty is
-      competitive in all three categories and Ghostty doesn't make you choose
-      between them.
-    </p>
-
     <p>
       Ghostty also intends to push the boundaries of what is possible with a
       terminal emulator by exposing modern, opt-in features that enable CLI
       tool developers to build more feature rich, interactive applications.
-    </p>
-
-    <p>
-      While aiming for this ambitious goal, our first step is to make Ghostty
-      one of the best fully standards compliant terminal emulator, remaining
-      compatible with all existing shells and software while supporting all of
-      the latest terminal innovations in the ecosystem. You can use Ghostty as
-      a drop-in replacement for your existing terminal emulator.
     </p>
   </description>
 
