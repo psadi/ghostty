@@ -335,10 +335,7 @@ pub fn init(self: *Window, app: *App) !void {
                     .top,
                     .left,
                     .right,
-                    => c.gtk_box_prepend(
-                        @ptrCast(box),
-                        @ptrCast(@alignCast(tab_bar)),
-                    ),
+                    => c.gtk_box_insert_child_after(@ptrCast(box), @ptrCast(@alignCast(tab_bar)), @ptrCast(@alignCast(self.headerbar.asWidget()))),
 
                     .bottom => c.gtk_box_append(
                         @ptrCast(box),
@@ -639,16 +636,20 @@ fn gtkWindowNotifyMaximized(
     ud: ?*anyopaque,
 ) callconv(.C) void {
     const self = userdataSelf(ud orelse return);
-    const maximized = c.gtk_window_is_maximized(self.window) != 0;
 
     // Only toggle visibility of the header bar when we're using CSDs,
     // and actually intend on displaying the header bar
     if (!self.winproto.clientSideDecorationEnabled()) return;
 
+    // If we aren't maximized, we should show the headerbar again
+    // if it was originally visible.
+    const maximized = c.gtk_window_is_maximized(self.window) != 0;
     if (!maximized) {
-        self.headerbar.setVisible(true);
+        self.headerbar.setVisible(self.app.config.@"gtk-titlebar");
         return;
     }
+
+    // If we are maximized, we should hide the headerbar if requested.
     if (self.app.config.@"gtk-titlebar-hide-when-maximized") {
         self.headerbar.setVisible(false);
     }
@@ -657,8 +658,9 @@ fn gtkWindowNotifyMaximized(
 fn gtkWindowNotifyDecorated(
     object: *c.GObject,
     _: *c.GParamSpec,
-    _: ?*anyopaque,
+    ud: ?*anyopaque,
 ) callconv(.C) void {
+    const self = userdataSelf(ud orelse return);
     const is_decorated = c.gtk_window_get_decorated(@ptrCast(object)) == 1;
 
     // Fix any artifacting that may occur in window corners. The .ssd CSS
@@ -667,6 +669,11 @@ fn gtkWindowNotifyDecorated(
     // for .ssd is provided by GTK and Adwaita.
     toggleCssClass(@ptrCast(object), "ssd", !is_decorated);
     toggleCssClass(@ptrCast(object), "no-border-radius", !is_decorated);
+
+    // FIXME: This is to update the blur region offset on X11.
+    // Remove this when we move everything related to window appearance
+    // to `syncAppearance` for Ghostty 1.2.
+    self.winproto.syncAppearance() catch {};
 }
 
 fn gtkWindowNotifyFullscreened(
@@ -675,7 +682,14 @@ fn gtkWindowNotifyFullscreened(
     ud: ?*anyopaque,
 ) callconv(.C) void {
     const self = userdataSelf(ud orelse return);
-    self.headerbar.setVisible(c.gtk_window_is_fullscreen(@ptrCast(object)) == 0);
+    const fullscreened = c.gtk_window_is_fullscreen(@ptrCast(object)) != 0;
+    if (!fullscreened) {
+        const csd_enabled = self.winproto.clientSideDecorationEnabled();
+        self.headerbar.setVisible(self.app.config.@"gtk-titlebar" and csd_enabled);
+        return;
+    }
+
+    self.headerbar.setVisible(false);
 }
 
 // Note: we MUST NOT use the GtkButton parameter because gtkActionNewTab

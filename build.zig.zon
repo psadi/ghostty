@@ -1,12 +1,12 @@
 .{
     .name = "ghostty",
-    .version = "1.0.2",
+    .version = "1.1.1",
     .paths = .{""},
     .dependencies = .{
         // Zig libs
         .libxev = .{
-            .url = "https://github.com/mitchellh/libxev/archive/db6a52bafadf00360e675fefa7926e8e6c0e9931.tar.gz",
-            .hash = "12206029de146b685739f69b10a6f08baee86b3d0a5f9a659fa2b2b66c9602078bbf",
+            .url = "https://github.com/mitchellh/libxev/archive/31eed4e337fed7b0149319e5cdbb62b848c24fbd.tar.gz",
+            .hash = "1220ebf88622c4d502dc59e71347e4d28c47e033f11b59aff774ae5787565c40999c",
         },
         .mach_glfw = .{
             .url = "https://github.com/mitchellh/mach-glfw/archive/37c2995f31abcf7e8378fba68ddcf4a3faa02de0.tar.gz",

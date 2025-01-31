@@ -94,6 +94,9 @@ const PosixPty = struct {
     };
 
     /// The file descriptors for the master and slave side of the pty.
+    /// The slave side is never closed automatically by this struct
+    /// so the caller is responsible for closing it if things
+    /// go wrong.
     master: Fd,
     slave: Fd,
 
@@ -117,6 +120,24 @@ const PosixPty = struct {
             _ = posix.system.close(slave_fd);
         }
 
+        // Set CLOEXEC on the master fd, only the slave fd should be inherited
+        // by the child process (shell/command).
+        cloexec: {
+            const flags = std.posix.fcntl(master_fd, std.posix.F.GETFD, 0) catch |err| {
+                log.warn("error getting flags for master fd err={}", .{err});
+                break :cloexec;
+            };
+
+            _ = std.posix.fcntl(
+                master_fd,
+                std.posix.F.SETFD,
+                flags | std.posix.FD_CLOEXEC,
+            ) catch |err| {
+                log.warn("error setting CLOEXEC on master fd err={}", .{err});
+                break :cloexec;
+            };
+        }
+
         // Enable UTF-8 mode. I think this is on by default on Linux but it
         // is NOT on by default on macOS so we ensure that it is always set.
         var attrs: c.termios = undefined;
@@ -126,7 +147,7 @@ const PosixPty = struct {
         if (c.tcsetattr(master_fd, c.TCSANOW, &attrs) != 0)
             return error.OpenptyFailed;
 
-        return Pty{
+        return .{
             .master = master_fd,
             .slave = slave_fd,
         };
@@ -134,7 +155,6 @@ const PosixPty = struct {
 
     pub fn deinit(self: *Pty) void {
         _ = posix.system.close(self.master);
-        _ = posix.system.close(self.slave);
         self.* = undefined;
     }
 
@@ -181,6 +201,7 @@ const PosixPty = struct {
         try posix.sigaction(posix.SIG.HUP, &sa, null);
         try posix.sigaction(posix.SIG.ILL, &sa, null);
         try posix.sigaction(posix.SIG.INT, &sa, null);
+        try posix.sigaction(posix.SIG.PIPE, &sa, null);
         try posix.sigaction(posix.SIG.SEGV, &sa, null);
         try posix.sigaction(posix.SIG.TRAP, &sa, null);
         try posix.sigaction(posix.SIG.TERM, &sa, null);
@@ -201,8 +222,6 @@ const PosixPty = struct {
         // Can close master/slave pair now
         posix.close(self.slave);
         posix.close(self.master);
-
-        // TODO: reset signals
     }
 };
 

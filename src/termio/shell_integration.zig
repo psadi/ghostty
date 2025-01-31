@@ -203,8 +203,6 @@ test "setup features" {
 /// our script's responsibility (along with disabling POSIX
 /// mode).
 ///
-/// This approach requires bash version 4 or later.
-///
 /// This returns a new (allocated) shell command string that
 /// enables the integration or null if integration failed.
 fn setupBash(
@@ -246,12 +244,6 @@ fn setupBash(
     // Unsupported options:
     //  -c          -c is always non-interactive
     //  --posix     POSIX mode (a la /bin/sh)
-    //
-    // Some additional cases we don't yet cover:
-    //
-    //  - If additional file arguments are provided (after a `-` or `--` flag),
-    //    and the `i` shell option isn't being explicitly set, we can assume a
-    //    non-interactive shell session and skip loading our shell integration.
     var rcfile: ?[]const u8 = null;
     while (iter.next()) |arg| {
         if (std.mem.eql(u8, arg, "--posix")) {
@@ -268,6 +260,14 @@ fn setupBash(
                 return null;
             }
             try args.append(arg);
+        } else if (std.mem.eql(u8, arg, "-") or std.mem.eql(u8, arg, "--")) {
+            // All remaining arguments should be passed directly to the shell
+            // command. We shouldn't perform any further option processing.
+            try args.append(arg);
+            while (iter.next()) |remaining_arg| {
+                try args.append(remaining_arg);
+            }
+            break;
         } else {
             try args.append(arg);
         }
@@ -427,6 +427,30 @@ test "bash: HISTFILE" {
 
         try testing.expectEqualStrings("my_history", env.get("HISTFILE").?);
         try testing.expect(env.get("GHOSTTY_BASH_UNEXPORT_HISTFILE") == null);
+    }
+}
+
+test "bash: additional arguments" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var env = EnvMap.init(alloc);
+    defer env.deinit();
+
+    // "-" argument separator
+    {
+        const command = try setupBash(alloc, "bash - --arg file1 file2", ".", &env);
+        defer if (command) |c| alloc.free(c);
+
+        try testing.expectEqualStrings("bash --posix - --arg file1 file2", command.?);
+    }
+
+    // "--" argument separator
+    {
+        const command = try setupBash(alloc, "bash -- --arg file1 file2", ".", &env);
+        defer if (command) |c| alloc.free(c);
+
+        try testing.expectEqualStrings("bash --posix -- --arg file1 file2", command.?);
     }
 }
 

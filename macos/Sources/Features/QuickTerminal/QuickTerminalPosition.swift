@@ -118,4 +118,22 @@ enum QuickTerminalPosition : String {
             return .init(x: screen.visibleFrame.origin.x + (screen.visibleFrame.width - window.frame.width) / 2, y: screen.visibleFrame.origin.y + (screen.visibleFrame.height - window.frame.height) / 2)
         }
     }
+
+    func conflictsWithDock(on screen: NSScreen) -> Bool {
+        // Screen must have a dock for it to conflict
+        guard screen.hasDock else { return false }
+
+        // Get the dock orientation for this screen
+        guard let orientation = Dock.orientation else { return false }
+
+        // Depending on the orientation of the dock, we conflict if our quick terminal
+        // would potentially "hit" the dock. In the future we should probably consider
+        // the frame of the quick terminal.
+        return switch (orientation) {
+        case .top: self == .top || self == .left || self == .right
+        case .bottom: self == .bottom || self == .left || self == .right
+        case .left: self == .top || self == .bottom
+        case .right: self == .top || self == .bottom
+        }
+    }
 }

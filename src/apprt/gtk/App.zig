@@ -73,6 +73,11 @@ clipboard_confirmation_window: ?*ClipboardConfirmationWindow = null,
 /// This is set to false when the main loop should exit.
 running: bool = true,
 
+/// If we should retry querying D-Bus for the color scheme with the deprecated
+/// Read method, instead of the recommended ReadOne method. This is kind of
+/// nasty to have as struct state but its just a byte...
+dbus_color_scheme_retry: bool = true,
+
 /// The base path of the transient cgroup used to put all surfaces
 /// into their own cgroup. This is only set if cgroups are enabled
 /// and initialization was successful.
@@ -1271,16 +1276,14 @@ pub fn run(self: *App) !void {
         self.transient_cgroup_base = path;
     } else log.debug("cgroup isolation disabled config={}", .{self.config.@"linux-cgroup"});
 
-    // Setup our D-Bus connection for listening to settings changes.
+    // Setup our D-Bus connection for listening to settings changes,
+    // and asynchronously request the initial color scheme
     self.initDbus();
 
     // Setup our menu items
     self.initActions();
     self.initMenu();
     self.initContextMenu();
-
-    // Setup our initial color scheme
-    self.colorSchemeEvent(self.getColorScheme());
 
     // On startup, we want to check for configuration errors right away
     // so we can show our error window. We also need to setup other initial
@@ -1328,6 +1331,22 @@ fn initDbus(self: *App) void {
         &gtkNotifyColorScheme,
         self,
         null,
+    );
+
+    // Request the initial color scheme asynchronously.
+    c.g_dbus_connection_call(
+        dbus,
+        "org.freedesktop.portal.Desktop",
+        "/org/freedesktop/portal/desktop",
+        "org.freedesktop.portal.Settings",
+        "ReadOne",
+        c.g_variant_new("(ss)", "org.freedesktop.appearance", "color-scheme"),
+        c.G_VARIANT_TYPE("(v)"),
+        c.G_DBUS_CALL_FLAGS_NONE,
+        -1,
+        null,
+        dbusColorSchemeCallback,
+        self,
     );
 }
 
@@ -1566,93 +1585,58 @@ fn gtkWindowIsActive(
     core_app.focusEvent(false);
 }
 
-/// Call a D-Bus method to determine the current color scheme. If there
-/// is any error at any point we'll log the error and return "light"
-pub fn getColorScheme(self: *App) apprt.ColorScheme {
-    const dbus_connection = c.g_application_get_dbus_connection(@ptrCast(self.app));
+fn dbusColorSchemeCallback(
+    source_object: [*c]c.GObject,
+    res: ?*c.GAsyncResult,
+    ud: ?*anyopaque,
+) callconv(.C) void {
+    const self: *App = @ptrCast(@alignCast(ud.?));
+    const dbus: *c.GDBusConnection = @ptrCast(source_object);
 
     var err: ?*c.GError = null;
     defer if (err) |e| c.g_error_free(e);
 
-    const value = c.g_dbus_connection_call_sync(
-        dbus_connection,
-        "org.freedesktop.portal.Desktop",
-        "/org/freedesktop/portal/desktop",
-        "org.freedesktop.portal.Settings",
-        "ReadOne",
-        c.g_variant_new("(ss)", "org.freedesktop.appearance", "color-scheme"),
-        c.G_VARIANT_TYPE("(v)"),
-        c.G_DBUS_CALL_FLAGS_NONE,
-        -1,
-        null,
-        &err,
-    ) orelse {
-        if (err) |e| {
-            // If ReadOne is not yet implemented, fall back to deprecated "Read" method
-            // Error code: GDBus.Error:org.freedesktop.DBus.Error.UnknownMethod: No such method “ReadOne”
-            if (e.code == 19) {
-                return self.getColorSchemeDeprecated();
+    if (c.g_dbus_connection_call_finish(dbus, res, &err)) |value| {
+        if (c.g_variant_is_of_type(value, c.G_VARIANT_TYPE("(v)")) == 1) {
+            var inner: ?*c.GVariant = null;
+            c.g_variant_get(value, "(v)", &inner);
+            defer c.g_variant_unref(inner);
+            if (c.g_variant_is_of_type(inner, c.G_VARIANT_TYPE("u")) == 1) {
+                self.colorSchemeEvent(if (c.g_variant_get_uint32(inner) == 1)
+                    .dark
+                else
+                    .light);
+                return;
             }
-            // Otherwise, log the error and return .light
-            log.err("unable to get current color scheme: {s}", .{e.message});
         }
-        return .light;
-    };
-    defer c.g_variant_unref(value);
+    } else if (err) |e| {
+        // If ReadOne is not yet implemented, fall back to deprecated "Read" method
+        // Error code: GDBus.Error:org.freedesktop.DBus.Error.UnknownMethod: No such method “ReadOne”
+        if (self.dbus_color_scheme_retry and e.code == 19) {
+            self.dbus_color_scheme_retry = false;
+            c.g_dbus_connection_call(
+                dbus,
+                "org.freedesktop.portal.Desktop",
+                "/org/freedesktop/portal/desktop",
+                "org.freedesktop.portal.Settings",
+                "Read",
+                c.g_variant_new("(ss)", "org.freedesktop.appearance", "color-scheme"),
+                c.G_VARIANT_TYPE("(v)"),
+                c.G_DBUS_CALL_FLAGS_NONE,
+                -1,
+                null,
+                dbusColorSchemeCallback,
+                self,
+            );
+            return;
+        }
 
-    if (c.g_variant_is_of_type(value, c.G_VARIANT_TYPE("(v)")) == 1) {
-        var inner: ?*c.GVariant = null;
-        c.g_variant_get(value, "(v)", &inner);
-        defer c.g_variant_unref(inner);
-        if (c.g_variant_is_of_type(inner, c.G_VARIANT_TYPE("u")) == 1) {
-            return if (c.g_variant_get_uint32(inner) == 1) .dark else .light;
-        }
+        // Otherwise, log the error and return .light
+        log.warn("unable to get current color scheme: {s}", .{e.message});
     }
 
-    return .light;
-}
-
-/// Call the deprecated D-Bus "Read" method to determine the current color scheme. If
-/// there is any error at any point we'll log the error and return "light"
-fn getColorSchemeDeprecated(self: *App) apprt.ColorScheme {
-    const dbus_connection = c.g_application_get_dbus_connection(@ptrCast(self.app));
-    var err: ?*c.GError = null;
-    defer if (err) |e| c.g_error_free(e);
-
-    const value = c.g_dbus_connection_call_sync(
-        dbus_connection,
-        "org.freedesktop.portal.Desktop",
-        "/org/freedesktop/portal/desktop",
-        "org.freedesktop.portal.Settings",
-        "Read",
-        c.g_variant_new("(ss)", "org.freedesktop.appearance", "color-scheme"),
-        c.G_VARIANT_TYPE("(v)"),
-        c.G_DBUS_CALL_FLAGS_NONE,
-        -1,
-        null,
-        &err,
-    ) orelse {
-        if (err) |e| log.err("Read method failed: {s}", .{e.message});
-        return .light;
-    };
-    defer c.g_variant_unref(value);
-
-    if (c.g_variant_is_of_type(value, c.G_VARIANT_TYPE("(v)")) == 1) {
-        var inner: ?*c.GVariant = null;
-        c.g_variant_get(value, "(v)", &inner);
-        defer if (inner) |i| c.g_variant_unref(i);
-
-        if (inner) |i| {
-            const child = c.g_variant_get_child_value(i, 0) orelse {
-                return .light;
-            };
-            defer c.g_variant_unref(child);
-
-            const val = c.g_variant_get_uint32(child);
-            return if (val == 1) .dark else .light;
-        }
-    }
-    return .light;
+    // Fall back
+    self.colorSchemeEvent(.light);
 }
 
 /// This will be called by D-Bus when the style changes between light & dark.

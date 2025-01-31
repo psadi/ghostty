@@ -42,6 +42,15 @@ const c = @cImport({
     @cInclude("unistd.h");
 });
 
+/// Renamed fields, used by cli.parse
+pub const renamed = std.StaticStringMap([]const u8).initComptime(&.{
+    // Ghostty 1.1 introduced background-blur support for Linux which
+    // doesn't support a specific radius value. The renaming is to let
+    // one field be used for both platforms (macOS retained the ability
+    // to set a radius).
+    .{ "background-blur-radius", "background-blur" },
+});
+
 /// The font families to use.
 ///
 /// You can generate the list of valid values using the CLI:
@@ -250,7 +259,8 @@ const c = @cImport({
 
 /// What color space to use when performing alpha blending.
 ///
-/// This affects how text looks for different background/foreground color pairs.
+/// This affects the appearance of text and of any images with transparency.
+/// Additionally, custom shaders will receive colors in the configured space.
 ///
 /// Valid values:
 ///
@@ -264,15 +274,10 @@ const c = @cImport({
 ///   This is also sometimes known as "gamma correction".
 ///   (Currently only supported on macOS. Has no effect on Linux.)
 ///
-/// * `linear-corrected` - Corrects the thinning/thickening effect of linear
-///   by applying a correction curve to the text alpha depending on its
-///   brightness. This compensates for the thinning and makes the weight of
-///   most text appear very similar to when it's blended non-linearly.
-///
-/// Note: This setting affects more than just text, images will also be blended
-/// in the selected color space, and custom shaders will receive colors in that
-/// color space as well.
-@"text-blending": TextBlending = .native,
+/// * `linear-corrected` - Same as `linear`, but with a correction step applied
+///   for text that makes it look nearly or completely identical to `native`,
+///   but without any of the darkening artifacts.
+@"alpha-blending": AlphaBlending = .native,
 
 /// All of the configurations behavior adjust various metrics determined by the
 /// font. The values can be integers (1, -1, etc.) or a percentage (20%, -15%,
@@ -649,7 +654,7 @@ palette: Palette = .{},
 /// need to set environment-specific settings and/or install third-party plugins
 /// in order to support background blur, as there isn't a unified interface for
 /// doing so.
-@"background-blur-radius": BackgroundBlur = .false,
+@"background-blur": BackgroundBlur = .false,
 
 /// The opacity level (opposite of transparency) of an unfocused split.
 /// Unfocused splits by default are slightly faded out to make it easier to see
@@ -1010,6 +1015,12 @@ class: ?[:0]const u8 = null,
 ///     performable (acting identically to not having a keybind set at
 ///     all).
 ///
+///     Performable keybinds will not appear as menu shortcuts in the
+///     application menu. This is because the menu shortcuts force the
+///     action to be performed regardless of the state of the terminal.
+///     Performable keybinds will still work, they just won't appear as
+///     a shortcut label in the menu.
+///
 /// Keybind triggers are not unique per prefix combination. For example,
 /// `ctrl+a` and `global:ctrl+a` are not two separate keybinds. The keybind
 /// set later will overwrite the keybind set earlier. In this case, the
@@ -1212,12 +1223,16 @@ keybind: Keybinds = .{},
 /// This is currently only supported on macOS and Linux.
 @"window-theme": WindowTheme = .auto,
 
-/// The colorspace to use for the terminal window. The default is `srgb` but
-/// this can also be set to `display-p3` to use the Display P3 colorspace.
+/// The color space to use when interpreting terminal colors. "Terminal colors"
+/// refers to colors specified in your configuration and colors produced by
+/// direct-color SGR sequences.
 ///
-/// Changing this value at runtime will only affect new windows.
+/// Valid values:
 ///
-/// This setting is only supported on macOS.
+///   * `srgb` - Interpret colors in the sRGB color space. This is the default.
+///   * `display-p3` - Interpret colors in the Display P3 color space.
+///
+/// This setting is currently only supported on macOS.
 @"window-colorspace": WindowColorspace = .srgb,
 
 /// The initial window size. This size is in terminal grid cells by default.
@@ -1762,6 +1777,31 @@ keybind: Keybinds = .{},
 /// open terminals.
 @"custom-shader-animation": CustomShaderAnimation = .true,
 
+/// Control the in-app notifications that Ghostty shows.
+///
+/// On Linux (GTK) with Adwaita, in-app notifications show up as toasts. Toasts
+/// appear overlaid on top of the terminal window. They are used to show
+/// information that is not critical but may be important.
+///
+/// Possible notifications are:
+///
+///   - `clipboard-copy` (default: true) - Show a notification when text is copied
+///     to the clipboard.
+///
+/// To specify a notification to enable, specify the name of the notification.
+/// To specify a notification to disable, prefix the name with `no-`. For
+/// example, to disable `clipboard-copy`, set this configuration to
+/// `no-clipboard-copy`. To enable it, set this configuration to `clipboard-copy`.
+///
+/// Multiple notifications can be enabled or disabled by separating them
+/// with a comma.
+///
+/// A value of "false" will disable all notifications. A value of "true" will
+/// enable all notifications.
+///
+/// This configuration only applies to GTK with Adwaita enabled.
+@"app-notifications": AppNotifications = .{},
+
 /// If anything other than false, fullscreen mode on macOS will not use the
 /// native fullscreen, but make the window fullscreen without animations and
 /// using a new space. It's faster than the native fullscreen mode since it
@@ -1816,9 +1856,12 @@ keybind: Keybinds = .{},
 /// The "hidden" style hides the titlebar. Unlike `window-decoration = false`,
 /// however, it does not remove the frame from the window or cause it to have
 /// squared corners. Changing to or from this option at run-time may affect
-/// existing windows in buggy ways. The top titlebar area of the window will
-/// continue to drag the window around and you will not be able to use
-/// the mouse for terminal events in this space.
+/// existing windows in buggy ways.
+///
+/// When "hidden", the top titlebar area can no longer be used for dragging
+/// the window. To drag the window, you can use option+click on the resizable
+/// areas of the frame to drag the window. This is a standard macOS behavior
+/// and not something Ghostty enables.
 ///
 /// The default value is "transparent". This is an opinionated choice
 /// but its one I think is the most aesthetically pleasing and works in
@@ -2109,29 +2152,6 @@ keybind: Keybinds = .{},
 /// Changing this value at runtime will only affect new windows.
 @"adw-toolbar-style": AdwToolbarStyle = .raised,
 
-/// Control the toasts that Ghostty shows. Toasts are small notifications
-/// that appear overlaid on top of the terminal window. They are used to
-/// show information that is not critical but may be important.
-///
-/// Possible toasts are:
-///
-///   - `clipboard-copy` (default: true) - Show a toast when text is copied
-///     to the clipboard.
-///
-/// To specify a toast to enable, specify the name of the toast. To specify
-/// a toast to disable, prefix the name with `no-`. For example, to disable
-/// the clipboard-copy toast, set this configuration to `no-clipboard-copy`.
-/// To enable the clipboard-copy toast, set this configuration to
-/// `clipboard-copy`.
-///
-/// Multiple toasts can be enabled or disabled by separating them with a comma.
-///
-/// A value of "false" will disable all toasts. A value of "true" will
-/// enable all toasts.
-///
-/// This configuration only applies to GTK with Adwaita enabled.
-@"adw-toast": AdwToast = .{},
-
 /// If `true` (default), then the Ghostty GTK tabs will be "wide." Wide tabs
 /// are the new typical Gnome style where tabs fill their available space.
 /// If you set this to `false` then tabs will only take up space they need,
@@ -2370,13 +2390,13 @@ pub fn default(alloc_gpa: Allocator) Allocator.Error!Config {
     try result.keybind.set.put(
         alloc,
         .{ .key = .{ .translated = .j }, .mods = inputpkg.ctrlOrSuper(.{ .shift = true }) },
-        .{ .write_scrollback_file = .paste },
+        .{ .write_screen_file = .paste },
     );
 
     try result.keybind.set.put(
         alloc,
         .{ .key = .{ .translated = .j }, .mods = inputpkg.ctrlOrSuper(.{ .shift = true, .alt = true }) },
-        .{ .write_scrollback_file = .open },
+        .{ .write_screen_file = .open },
     );
 
     // Expand Selection
@@ -5733,8 +5753,8 @@ pub const AdwToolbarStyle = enum {
     @"raised-border",
 };
 
-/// See adw-toast
-pub const AdwToast = packed struct {
+/// See app-notifications
+pub const AppNotifications = packed struct {
     @"clipboard-copy": bool = true,
 };
 
@@ -5812,13 +5832,13 @@ pub const GraphemeWidthMethod = enum {
     unicode,
 };
 
-/// See text-blending
-pub const TextBlending = enum {
+/// See alpha-blending
+pub const AlphaBlending = enum {
     native,
     linear,
     @"linear-corrected",
 
-    pub fn isLinear(self: TextBlending) bool {
+    pub fn isLinear(self: AlphaBlending) bool {
         return switch (self) {
             .native => false,
             .linear, .@"linear-corrected" => true,
@@ -5851,7 +5871,7 @@ pub const AutoUpdate = enum {
     download,
 };
 
-/// See background-blur-radius
+/// See background-blur
 pub const BackgroundBlur = union(enum) {
     false,
     true,

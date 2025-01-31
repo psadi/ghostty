@@ -179,8 +179,17 @@ pub fn threadExit(self: *Exec, td: *termio.Termio.ThreadData) void {
     // Quit our read thread after exiting the subprocess so that
     // we don't get stuck waiting for data to stop flowing if it is
     // a particularly noisy process.
-    _ = posix.write(exec.read_thread_pipe, "x") catch |err|
-        log.warn("error writing to read thread quit pipe err={}", .{err});
+    _ = posix.write(exec.read_thread_pipe, "x") catch |err| switch (err) {
+        // BrokenPipe means that our read thread is closed already,
+        // which is completely fine since that is what we were trying
+        // to achieve.
+        error.BrokenPipe => {},
+
+        else => log.warn(
+            "error writing to read thread quit pipe err={}",
+            .{err},
+        ),
+    };
 
     if (comptime builtin.os.tag == .windows) {
         // Interrupt the blocking read so the thread can see the quit message
@@ -1098,6 +1107,10 @@ const Subprocess = struct {
         });
         self.pty = pty;
         errdefer {
+            if (comptime builtin.os.tag != .windows) {
+                _ = posix.close(pty.slave);
+            }
+
             pty.deinit();
             self.pty = null;
         }
@@ -1180,6 +1193,13 @@ const Subprocess = struct {
         log.info("started subcommand path={s} pid={?}", .{ self.args[0], cmd.pid });
         if (comptime builtin.os.tag == .linux) {
             log.info("subcommand cgroup={s}", .{self.linux_cgroup orelse "-"});
+        }
+
+        if (comptime builtin.os.tag != .windows) {
+            // Once our subcommand is started we can close the slave
+            // side. This prevents the slave fd from being leaked to
+            // future children.
+            _ = posix.close(pty.slave);
         }
 
         self.command = cmd;
@@ -1454,6 +1474,13 @@ pub const ReadThread = struct {
             // If our quit fd is set, we're done.
             if (pollfds[1].revents & posix.POLL.IN != 0) {
                 log.info("read thread got quit signal", .{});
+                return;
+            }
+
+            // If our pty fd is closed, then we're also done with our
+            // read thread.
+            if (pollfds[0].revents & posix.POLL.HUP != 0) {
+                log.info("pty fd closed, read thread exiting", .{});
                 return;
             }
         }

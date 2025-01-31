@@ -2591,13 +2591,36 @@ pub fn selectOutput(self: *Screen, pin: Pin) ?Selection {
     const start: Pin = boundary: {
         var it = pin.rowIterator(.left_up, null);
         var it_prev = pin;
+
+        // First, iterate until we find the first line of command output
+        while (it.next()) |p| {
+            it_prev = p;
+            const row = p.rowAndCell().row;
+            switch (row.semantic_prompt) {
+                .command => break,
+
+                .unknown,
+                .prompt,
+                .prompt_continuation,
+                .input,
+                => {},
+            }
+        }
+
+        // Because the first line of command output may span multiple visual rows we must now
+        // iterate until we find the first row of anything other than command output and then
+        // yield the previous row.
         while (it.next()) |p| {
             const row = p.rowAndCell().row;
             switch (row.semantic_prompt) {
-                .command => break :boundary p,
-                else => {},
-            }
+                .command => {},
 
+                .unknown,
+                .prompt,
+                .prompt_continuation,
+                .input,
+                => break :boundary it_prev,
+            }
             it_prev = p;
         }
 
@@ -7641,17 +7664,17 @@ test "Screen: selectOutput" {
 
     // zig fmt: off
     {
-                                                    // line number:
-        try s.testWriteString("output1\n");         // 0
-        try s.testWriteString("output1\n");         // 1
-        try s.testWriteString("prompt2\n");         // 2
-        try s.testWriteString("input2\n");          // 3
-        try s.testWriteString("output2\n");         // 4
-        try s.testWriteString("output2\n");         // 5
-        try s.testWriteString("prompt3$ input3\n"); // 6
-        try s.testWriteString("output3\n");         // 7
-        try s.testWriteString("output3\n");         // 8
-        try s.testWriteString("output3");           // 9
+                                                                  // line number:
+        try s.testWriteString("output1\n");                       // 0
+        try s.testWriteString("output1\n");                       // 1
+        try s.testWriteString("prompt2\n");                       // 2
+        try s.testWriteString("input2\n");                        // 3
+        try s.testWriteString("output2output2output2output2\n");  // 4, 5, 6 due to overflow
+        try s.testWriteString("output2\n");                       // 7
+        try s.testWriteString("prompt3$ input3\n");               // 8
+        try s.testWriteString("output3\n");                       // 9
+        try s.testWriteString("output3\n");                       // 10
+        try s.testWriteString("output3");                         // 11
     }
     // zig fmt: on
 
@@ -7671,12 +7694,22 @@ test "Screen: selectOutput" {
         row.semantic_prompt = .command;
     }
     {
+        const pin = s.pages.pin(.{ .screen = .{ .y = 5 } }).?;
+        const row = pin.rowAndCell().row;
+        row.semantic_prompt = .command;
+    }
+    {
         const pin = s.pages.pin(.{ .screen = .{ .y = 6 } }).?;
+        const row = pin.rowAndCell().row;
+        row.semantic_prompt = .command;
+    }
+    {
+        const pin = s.pages.pin(.{ .screen = .{ .y = 8 } }).?;
         const row = pin.rowAndCell().row;
         row.semantic_prompt = .input;
     }
     {
-        const pin = s.pages.pin(.{ .screen = .{ .y = 7 } }).?;
+        const pin = s.pages.pin(.{ .screen = .{ .y = 9 } }).?;
         const row = pin.rowAndCell().row;
         row.semantic_prompt = .command;
     }
@@ -7701,7 +7734,7 @@ test "Screen: selectOutput" {
     {
         var sel = s.selectOutput(s.pages.pin(.{ .active = .{
             .x = 3,
-            .y = 5,
+            .y = 7,
         } }).?).?;
         defer sel.deinit(&s);
         try testing.expectEqual(point.Point{ .active = .{
@@ -7710,23 +7743,23 @@ test "Screen: selectOutput" {
         } }, s.pages.pointFromPin(.active, sel.start()).?);
         try testing.expectEqual(point.Point{ .active = .{
             .x = 9,
-            .y = 5,
+            .y = 7,
         } }, s.pages.pointFromPin(.active, sel.end()).?);
     }
     // No end marker, should select till the end
     {
         var sel = s.selectOutput(s.pages.pin(.{ .active = .{
             .x = 2,
-            .y = 7,
+            .y = 10,
         } }).?).?;
         defer sel.deinit(&s);
         try testing.expectEqual(point.Point{ .active = .{
             .x = 0,
-            .y = 7,
+            .y = 9,
         } }, s.pages.pointFromPin(.active, sel.start()).?);
         try testing.expectEqual(point.Point{ .active = .{
             .x = 9,
-            .y = 10,
+            .y = 12,
         } }, s.pages.pointFromPin(.active, sel.end()).?);
     }
     // input / prompt at y = 0, pt.y = 0

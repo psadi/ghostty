@@ -158,7 +158,7 @@ pub const Uniforms = extern struct {
     /// Enables a weight correction step that makes text rendered
     /// with linear alpha blending have a similar apparent weight
     /// (thickness) to gamma-incorrect blending.
-    use_experimental_linear_correction: bool align(1) = false,
+    use_linear_correction: bool align(1) = false,
 
     const PaddingExtend = packed struct(u8) {
         left: bool = false,

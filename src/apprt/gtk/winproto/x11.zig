@@ -157,7 +157,7 @@ pub const Window = struct {
     config: DerivedConfig,
     window: c.Window,
     gtk_window: *c.GtkWindow,
-    blur_region: Region,
+    blur_region: Region = .{},
 
     const DerivedConfig = struct {
         blur: bool,
@@ -165,7 +165,7 @@ pub const Window = struct {
 
         pub fn init(config: *const Config) DerivedConfig {
             return .{
-                .blur = config.@"background-blur-radius".enabled(),
+                .blur = config.@"background-blur".enabled(),
                 .has_decoration = switch (config.@"window-decoration") {
                     .none => false,
                     .auto, .client, .server => true,
@@ -190,34 +190,11 @@ pub const Window = struct {
             c.gdk_x11_surface_get_type(),
         ) == 0) return error.NotX11Surface;
 
-        const blur_region: Region = blur: {
-            if ((comptime !adwaita.versionAtLeast(0, 0, 0)) or
-                !adwaita.enabled(config)) break :blur .{};
-
-            // NOTE(pluiedev): CSDs are a f--king mistake.
-            // Please, GNOME, stop this nonsense of making a window ~30% bigger
-            // internally than how they really are just for your shadows and
-            // rounded corners and all that fluff. Please. I beg of you.
-            var x: f64 = 0;
-            var y: f64 = 0;
-            c.gtk_native_get_surface_transform(
-                @ptrCast(gtk_window),
-                &x,
-                &y,
-            );
-
-            break :blur .{
-                .x = @intFromFloat(x),
-                .y = @intFromFloat(y),
-            };
-        };
-
         return .{
             .app = app,
             .config = DerivedConfig.init(config),
             .window = c.gdk_x11_surface_get_xid(surface),
             .gtk_window = gtk_window,
-            .blur_region = blur_region,
         };
     }
 
@@ -241,6 +218,24 @@ pub const Window = struct {
     }
 
     pub fn syncAppearance(self: *Window) !void {
+        self.blur_region = blur: {
+            // NOTE(pluiedev): CSDs are a f--king mistake.
+            // Please, GNOME, stop this nonsense of making a window ~30% bigger
+            // internally than how they really are just for your shadows and
+            // rounded corners and all that fluff. Please. I beg of you.
+            var x: f64 = 0;
+            var y: f64 = 0;
+            c.gtk_native_get_surface_transform(
+                @ptrCast(self.gtk_window),
+                &x,
+                &y,
+            );
+
+            break :blur .{
+                .x = @intFromFloat(x),
+                .y = @intFromFloat(y),
+            };
+        };
         try self.syncBlur();
     }
 

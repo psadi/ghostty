@@ -1041,6 +1041,9 @@ fn mouseRefreshLinks(
     pos_vp: terminal.point.Coordinate,
     over_link: bool,
 ) !void {
+    // If the position is outside our viewport, do nothing
+    if (pos.x < 0 or pos.y < 0) return;
+
     self.mouse.link_point = pos_vp;
 
     if (try self.linkAtPos(pos)) |link| {

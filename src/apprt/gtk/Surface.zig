@@ -368,10 +368,9 @@ cursor_pos: apprt.CursorPos,
 inspector: ?*inspector.Inspector = null,
 
 /// Key input states. See gtkKeyPressed for detailed descriptions.
-in_keypress: bool = false,
+in_keyevent: bool = false,
 im_context: *c.GtkIMContext,
 im_composing: bool = false,
-im_commit_buffered: bool = false,
 im_buf: [128]u8 = undefined,
 im_len: u7 = 0,
 
@@ -560,7 +559,7 @@ pub fn init(self: *Surface, app: *App, opts: Options) !void {
         .font_size = font_size,
         .init_config = init_config,
         .size = .{ .width = 800, .height = 600 },
-        .cursor_pos = .{ .x = 0, .y = 0 },
+        .cursor_pos = .{ .x = -1, .y = -1 },
         .im_context = im_context,
         .cgroup_path = cgroup_path,
     };
@@ -633,9 +632,6 @@ fn realize(self: *Surface) !void {
     if (self.font_size) |size| {
         try self.core_surface.setFontSize(size);
     }
-
-    // Set the initial color scheme
-    try self.core_surface.colorSchemeCallback(self.app.getColorScheme());
 
     // Note we're realized
     self.realized = true;
@@ -1137,7 +1133,7 @@ pub fn setClipboardString(
         c.gdk_clipboard_set_text(clipboard, val.ptr);
         // We only toast if we are copying to the standard clipboard.
         if (clipboard_type == .standard and
-            self.app.config.@"adw-toast".@"clipboard-copy")
+            self.app.config.@"app-notifications".@"clipboard-copy")
         {
             if (self.container.window()) |window|
                 window.sendToast("Copied to clipboard");
@@ -1604,30 +1600,36 @@ fn gtkKeyReleased(
     )) 1 else 0;
 }
 
-/// Key press event. This is where we do ALL of our key handling,
-/// translation to keyboard layouts, dead key handling, etc. Key handling
-/// is complicated so this comment will explain what's going on.
+/// Key press event (press or release).
 ///
 /// At a high level, we want to construct an `input.KeyEvent` and
 /// pass that to `keyCallback`. At a low level, this is more complicated
 /// than it appears because we need to construct all of this information
 /// and its not given to us.
 ///
-/// For press events, we run the keypress through the input method context
-/// in order to determine if we're in a dead key state, completed unicode
-/// char, etc. This all happens through various callbacks: preedit, commit,
-/// etc. These inspect "in_keypress" if they have to and set some instance
-/// state.
+/// For all events, we run the GdkEvent through the input method context.
+/// This allows the input method to capture the event and trigger
+/// callbacks such as preedit, commit, etc.
 ///
-/// We then take all of the information in order to determine if we have
+/// There are a couple important aspects to the prior paragraph: we must
+/// send ALL events through the input method context. This is because
+/// input methods use both key press and key release events to determine
+/// the state of the input method. For example, fcitx uses key release
+/// events on modifiers (i.e. ctrl+shift) to switch the input method.
+///
+/// We set some state to note we're in a key event (self.in_keyevent)
+/// because some of the input method callbacks change behavior based on
+/// this state. For example, we don't want to send character events
+/// like "a" via the input "commit" event if we're actively processing
+/// a keypress because we'd lose access to the keycode information.
+/// However, a "commit" event may still happen outside of a keypress
+/// event from e.g. a tablet or on-screen keyboard.
+///
+/// Finally, we take all of the information in order to determine if we have
 /// a unicode character or if we have to map the keyval to a code to
 /// get the underlying logical key, etc.
 ///
-/// Finally, we can emit the keyCallback.
-///
-/// Note we ALSO have an IMContext attached directly to the widget
-/// which can emit preedit and commit callbacks. But, if we're not
-/// in a keypress, we let those automatically work.
+/// Then we can emit the keyCallback.
 pub fn keyEvent(
     self: *Surface,
     action: input.Action,
@@ -1636,26 +1638,15 @@ pub fn keyEvent(
     keycode: c.guint,
     gtk_mods: c.GdkModifierType,
 ) bool {
+    // log.warn("GTKIM: keyEvent action={}", .{action});
     const event = c.gtk_event_controller_get_current_event(
         @ptrCast(ec_key),
     ) orelse return false;
 
-    const keyval_unicode = c.gdk_keyval_to_unicode(keyval);
-
-    // Get the unshifted unicode value of the keyval. This is used
-    // by the Kitty keyboard protocol.
-    const keyval_unicode_unshifted: u21 = gtk_key.keyvalUnicodeUnshifted(
-        @ptrCast(self.gl_area),
-        event,
-        keycode,
-    );
-
-    // We always reset our committed text when ending a keypress so that
-    // future keypresses don't think we have a commit event.
-    defer self.im_len = 0;
-
-    // We only want to send the event through the IM context if we're a press
-    if (action == .press or action == .repeat) {
+    // The block below is all related to input method handling. See the function
+    // comment for some high level details and then the comments within
+    // the block for more specifics.
+    {
         // This can trigger an input method so we need to notify the im context
         // where the cursor is so it can render the dropdowns in the correct
         // place.
@@ -1667,40 +1658,93 @@ pub fn keyEvent(
             .height = 1,
         });
 
-        // We mark that we're in a keypress event. We use this in our
-        // IM commit callback to determine if we need to send a char callback
-        // to the core surface or not.
-        self.in_keypress = true;
-        defer self.in_keypress = false;
+        // Pass the event through the IM controller. This will return true
+        // if the input method handled the event.
+        //
+        // Confusingly, not all events handled by the input method result
+        // in this returning true so we have to maintain some local state to
+        // find those and in one case we simply lose information.
+        //
+        // - If we change the input method via keypress while we have preedit
+        //   text, the input method will commit the pending text but will not
+        //   mark it as handled. We use the `was_composing` variable to detect
+        //   this case.
+        //
+        // - If we switch input methods (i.e. via ctrl+shift with fcitx),
+        //   the input method will handle the key release event but will not
+        //   mark it as handled. I don't know any way to detect this case so
+        //   it will result in a key event being sent to the key callback.
+        //   For Kitty text encoding, this will result in modifiers being
+        //   triggered despite being technically consumed. At the time of
+        //   writing, both Kitty and Alacritty have the same behavior. I
+        //   know of no way to fix this.
+        const was_composing = self.im_composing;
+        const im_handled = filter: {
+            // We note that we're in a keypress because we want some logic to
+            // depend on this. For example, we don't want to send character events
+            // like "a" via the input "commit" event if we're actively processing
+            // a keypress because we'd lose access to the keycode information.
+            self.in_keyevent = true;
+            defer self.in_keyevent = false;
+            break :filter c.gtk_im_context_filter_keypress(
+                self.im_context,
+                event,
+            ) != 0;
+        };
+        // log.warn("GTKIM: im_handled={} im_len={} im_composing={}", .{
+        //     im_handled,
+        //     self.im_len,
+        //     self.im_composing,
+        // });
 
-        // Pass the event through the IM controller to handle dead key states.
-        // Filter is true if the event was handled by the IM controller.
-        const im_handled = c.gtk_im_context_filter_keypress(self.im_context, event) != 0;
-        // log.warn("im_handled={} im_len={} im_composing={}", .{ im_handled, self.im_len, self.im_composing });
+        // If the input method handled the event, you would think we would
+        // never proceed with key encoding for Ghostty but that is not the
+        // case. Input methods will handle basic character encoding like
+        // typing "a" and we want to associate that with the key event.
+        // So we have to check additional state to determine if we exit.
+        if (im_handled) {
+            // If we are composing then we're in a preedit state and do
+            // not want to encode any keys. For example: type a deadkey
+            // such as single quote on a US international keyboard layout.
+            if (self.im_composing) return true;
 
-        // If this is a dead key, then we're composing a character and
-        // we need to set our proper preedit state.
-        if (self.im_composing) preedit: {
-            const text = self.im_buf[0..self.im_len];
-            self.core_surface.preeditCallback(text) catch |err| {
-                log.err("error in preedit callback err={}", .{err});
-                break :preedit;
-            };
+            // If we were composing and now we're not it means that we committed
+            // the text. We also don't want to encode a key event for this.
+            // Example: enable Japanese input method, press "konn" and then
+            // press enter. The final enter should not be encoded and "konn"
+            // (in hiragana) should be written as "こん".
+            if (was_composing) return true;
 
-            // If we're composing then we don't want to send the key
-            // event to the core surface so we always return immediately.
-            if (im_handled) return true;
-        } else {
-            // If we aren't composing, then we set our preedit to
-            // empty no matter what.
-            self.core_surface.preeditCallback(null) catch {};
-
-            // If the IM handled this and we have no text, then we just
-            // return because this probably just changed the input method
-            // or something.
-            if (im_handled and self.im_len == 0) return true;
+            // Not composing and our input method buffer is empty. This could
+            // mean that the input method reacted to this event by activating
+            // an onscreen keyboard or something equivalent. We don't know.
+            // But the input method handled it and didn't give us text so
+            // we will just assume we should not encode this. This handles a
+            // real scenario when ibus starts the emoji input method
+            // (super+.).
+            if (self.im_len == 0) return true;
         }
+
+        // At this point, for the sake of explanation of internal state:
+        // it is possible that im_len > 0 and im_composing == false. This
+        // means that we received a commit event from the input method that
+        // we want associated with the key event. This is common: its how
+        // basic character translation for simple inputs like "a" work.
     }
+
+    // We always reset the length of the im buffer. There's only one scenario
+    // we reach this point with im_len > 0 and that's if we received a commit
+    // event from the input method. We don't want to keep that state around
+    // since we've handled it here.
+    defer self.im_len = 0;
+
+    // Get the keyvals for this event.
+    const keyval_unicode = c.gdk_keyval_to_unicode(keyval);
+    const keyval_unicode_unshifted: u21 = gtk_key.keyvalUnicodeUnshifted(
+        @ptrCast(self.gl_area),
+        event,
+        keycode,
+    );
 
     // We want to get the physical unmapped key to process physical keybinds.
     // (These are keybinds explicitly marked as requesting physical mapping).
@@ -1713,6 +1757,7 @@ pub fn keyEvent(
         event,
         physical_key,
         gtk_mods,
+        action,
         &self.app.winproto,
     );
 
@@ -1834,12 +1879,11 @@ fn gtkInputPreeditStart(
     _: *c.GtkIMContext,
     ud: ?*anyopaque,
 ) callconv(.C) void {
-    //log.debug("preedit start", .{});
+    // log.warn("GTKIM: preedit start", .{});
     const self = userdataSelf(ud.?);
-    if (!self.in_keypress) return;
 
-    // Mark that we are now composing a string with a dead key state.
-    // We'll record the string in the preedit-changed callback.
+    // Start our composing state for the input method and reset our
+    // input buffer to empty.
     self.im_composing = true;
     self.im_len = 0;
 }
@@ -1848,27 +1892,8 @@ fn gtkInputPreeditChanged(
     ctx: *c.GtkIMContext,
     ud: ?*anyopaque,
 ) callconv(.C) void {
+    // log.warn("GTKIM: preedit change", .{});
     const self = userdataSelf(ud.?);
-
-    // If there's buffered character, send the characters directly to the surface.
-    if (self.im_composing and self.im_commit_buffered) {
-        defer self.im_commit_buffered = false;
-        defer self.im_len = 0;
-        _ = self.core_surface.keyCallback(.{
-            .action = .press,
-            .key = .invalid,
-            .physical_key = .invalid,
-            .mods = .{},
-            .consumed_mods = .{},
-            .composing = false,
-            .utf8 = self.im_buf[0..self.im_len],
-        }) catch |err| {
-            log.err("error in key callback err={}", .{err});
-            return;
-        };
-    }
-
-    if (!self.in_keypress) return;
 
     // Get our pre-edit string that we'll use to show the user.
     var buf: [*c]u8 = undefined;
@@ -1876,26 +1901,26 @@ fn gtkInputPreeditChanged(
     defer c.g_free(buf);
     const str = std.mem.sliceTo(buf, 0);
 
-    // If our string becomes empty we ignore this. This can happen after
-    // a commit event when the preedit is being cleared and we don't want
-    // to set im_len to zero. This is safe because preeditstart always sets
-    // im_len to zero.
-    if (str.len == 0) return;
-
-    // Copy the preedit string into the im_buf. This is safe because
-    // commit will always overwrite this.
-    self.im_len = @intCast(@min(self.im_buf.len, str.len));
-    @memcpy(self.im_buf[0..self.im_len], str);
+    // Update our preedit state in Ghostty core
+    self.core_surface.preeditCallback(str) catch |err| {
+        log.err("error in preedit callback err={}", .{err});
+    };
 }
 
 fn gtkInputPreeditEnd(
     _: *c.GtkIMContext,
     ud: ?*anyopaque,
 ) callconv(.C) void {
-    //log.debug("preedit end", .{});
+    // log.warn("GTKIM: preedit end", .{});
     const self = userdataSelf(ud.?);
-    if (!self.in_keypress) return;
+
+    // End our composing state for GTK, allowing us to commit the text.
     self.im_composing = false;
+
+    // End our preedit state in Ghostty core
+    self.core_surface.preeditCallback(null) catch |err| {
+        log.err("error in preedit callback err={}", .{err});
+    };
 }
 
 fn gtkInputCommit(
@@ -1903,38 +1928,45 @@ fn gtkInputCommit(
     bytes: [*:0]u8,
     ud: ?*anyopaque,
 ) callconv(.C) void {
+    // log.warn("GTKIM: input commit", .{});
     const self = userdataSelf(ud.?);
     const str = std.mem.sliceTo(bytes, 0);
 
-    // If we're in a key event, then we want to buffer the commit so
-    // that we can send the proper keycallback followed by the char
-    // callback.
-    if (self.in_keypress) {
-        if (str.len <= self.im_buf.len) {
-            @memcpy(self.im_buf[0..str.len], str);
-            self.im_len = @intCast(str.len);
-
-            // If composing is done and character should be committed,
-            // It should be committed in preedit callback.
-            if (self.im_composing) {
-                self.im_commit_buffered = true;
-            }
-
-            // log.debug("input commit len={}", .{self.im_len});
-        } else {
+    // If we're in a keyEvent (i.e. a keyboard event) and we're not composing,
+    // then this is just a normal key press resulting in UTF-8 text. We
+    // want the keyEvent to handle this so that the UTF-8 text can be associated
+    // with a keyboard event.
+    if (!self.im_composing and self.in_keyevent) {
+        if (str.len > self.im_buf.len) {
             log.warn("not enough buffer space for input method commit", .{});
+            return;
         }
 
+        // Copy our committed text to the buffer
+        @memcpy(self.im_buf[0..str.len], str);
+        self.im_len = @intCast(str.len);
+
+        // log.debug("input commit len={}", .{self.im_len});
         return;
     }
 
-    // This prevents staying in composing state after commit even though
-    // input method has changed.
+    // If we reach this point from above it means we're composing OR
+    // not in a keypress. In either case, we want to commit the text
+    // given to us because that's what GTK is asking us to do. If we're
+    // not in a keypress it means that this commit came via a non-keyboard
+    // event (i.e. on-screen keyboard, tablet of some kind, etc.).
+
+    // Committing ends composing state
     self.im_composing = false;
 
-    // We're not in a keypress, so this was sent from an on-screen emoji
-    // keyboard or something like that. Send the characters directly to
-    // the surface.
+    // End our preedit state. Well-behaved input methods do this for us
+    // by triggering a preedit-end event but some do not (ibus 1.5.29).
+    self.core_surface.preeditCallback(null) catch |err| {
+        log.err("error in preedit callback err={}", .{err});
+    };
+
+    // Send the text to the core surface, associated with no key (an
+    // invalid key, which should produce no PTY encoding).
     _ = self.core_surface.keyCallback(.{
         .action = .press,
         .key = .invalid,
@@ -1944,7 +1976,7 @@ fn gtkInputCommit(
         .composing = false,
         .utf8 = str,
     }) catch |err| {
-        log.err("error in key callback err={}", .{err});
+        log.warn("error in key callback err={}", .{err});
         return;
     };
 }

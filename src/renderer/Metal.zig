@@ -391,7 +391,7 @@ pub const DerivedConfig = struct {
     links: link.Set,
     vsync: bool,
     colorspace: configpkg.Config.WindowColorspace,
-    blending: configpkg.Config.TextBlending,
+    blending: configpkg.Config.AlphaBlending,
 
     pub fn init(
         alloc_gpa: Allocator,
@@ -463,7 +463,7 @@ pub const DerivedConfig = struct {
             .links = links,
             .vsync = config.@"window-vsync",
             .colorspace = config.@"window-colorspace",
-            .blending = config.@"text-blending",
+            .blending = config.@"alpha-blending",
             .arena = arena,
         };
     }
@@ -667,7 +667,7 @@ pub fn init(alloc: Allocator, options: renderer.Options) !Metal {
             .cursor_wide = false,
             .use_display_p3 = options.config.colorspace == .@"display-p3",
             .use_linear_blending = options.config.blending.isLinear(),
-            .use_experimental_linear_correction = options.config.blending == .@"linear-corrected",
+            .use_linear_correction = options.config.blending == .@"linear-corrected",
         },
 
         // Fonts
@@ -2099,7 +2099,7 @@ pub fn changeConfig(self: *Metal, config: *DerivedConfig) !void {
     // Set our new color space and blending
     self.uniforms.use_display_p3 = config.colorspace == .@"display-p3";
     self.uniforms.use_linear_blending = config.blending.isLinear();
-    self.uniforms.use_experimental_linear_correction = config.blending == .@"linear-corrected";
+    self.uniforms.use_linear_correction = config.blending == .@"linear-corrected";
 
     // Set our new colors
     self.default_background_color = config.background;
@@ -2242,7 +2242,7 @@ pub fn setScreenSize(
         .cursor_wide = old.cursor_wide,
         .use_display_p3 = old.use_display_p3,
         .use_linear_blending = old.use_linear_blending,
-        .use_experimental_linear_correction = old.use_experimental_linear_correction,
+        .use_linear_correction = old.use_linear_correction,
     };
 
     // Reset our cell contents if our grid size has changed.
@@ -2672,9 +2672,8 @@ fn rebuildCells(
                     // Cells that are reversed should be fully opaque.
                     if (style.flags.inverse) break :bg_alpha default;
 
-                    // Cells that have an explicit bg color, which does not
-                    // match the current surface bg, should be fully opaque.
-                    if (bg != null and !rgb.eql(self.background_color orelse self.default_background_color)) {
+                    // Cells that have an explicit bg color should be fully opaque.
+                    if (bg_style != null) {
                         break :bg_alpha default;
                     }
 
