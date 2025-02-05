@@ -13,7 +13,7 @@ const log = std.log.scoped(.gtk_x11);
 pub const App = struct {
     display: *c.Display,
     base_event_code: c_int,
-    kde_blur_atom: c.Atom,
+    atoms: Atoms,
 
     pub fn init(
         alloc: Allocator,
@@ -95,10 +95,7 @@ pub const App = struct {
         return .{
             .display = display,
             .base_event_code = base_event_code,
-            .kde_blur_atom = c.gdk_x11_get_xatom_by_name_for_display(
-                gdk_display,
-                "_KDE_NET_WM_BLUR_BEHIND_REGION",
-            ),
+            .atoms = Atoms.init(gdk_display),
         };
     }
 
@@ -154,28 +151,27 @@ pub const App = struct {
 
 pub const Window = struct {
     app: *App,
+    alloc: Allocator,
     config: DerivedConfig,
     window: c.Window,
     gtk_window: *c.GtkWindow,
+
     blur_region: Region = .{},
 
     const DerivedConfig = struct {
         blur: bool,
-        has_decoration: bool,
+        window_decoration: Config.WindowDecoration,
 
         pub fn init(config: *const Config) DerivedConfig {
             return .{
                 .blur = config.@"background-blur".enabled(),
-                .has_decoration = switch (config.@"window-decoration") {
-                    .none => false,
-                    .auto, .client, .server => true,
-                },
+                .window_decoration = config.@"window-decoration",
             };
         }
     };
 
     pub fn init(
-        _: Allocator,
+        alloc: Allocator,
         app: *App,
         gtk_window: *c.GtkWindow,
         config: *const Config,
@@ -192,6 +188,7 @@ pub const Window = struct {
 
         return .{
             .app = app,
+            .alloc = alloc,
             .config = DerivedConfig.init(config),
             .window = c.gdk_x11_surface_get_xid(surface),
             .gtk_window = gtk_window,
@@ -236,11 +233,19 @@ pub const Window = struct {
                 .y = @intFromFloat(y),
             };
         };
-        try self.syncBlur();
+        self.syncBlur() catch |err| {
+            log.err("failed to synchronize blur={}", .{err});
+        };
+        self.syncDecorations() catch |err| {
+            log.err("failed to synchronize decorations={}", .{err});
+        };
     }
 
     pub fn clientSideDecorationEnabled(self: Window) bool {
-        return self.config.has_decoration;
+        return switch (self.config.window_decoration) {
+            .auto, .client => true,
+            .server, .none => false,
+        };
     }
 
     fn syncBlur(self: *Window) !void {
@@ -260,32 +265,191 @@ pub const Window = struct {
         });
 
         if (blur) {
-            _ = c.XChangeProperty(
-                self.app.display,
-                self.window,
-                self.app.kde_blur_atom,
+            try self.changeProperty(
+                Region,
+                self.app.atoms.kde_blur,
                 c.XA_CARDINAL,
-                // Despite what you might think, the "32" here does NOT mean
-                // that the data should be in u32s. Instead, they should be
-                // c_longs, which on any 64-bit architecture would be obviously
-                // 64 bits. WTF?!
-                32,
-                c.PropModeReplace,
-                // SAFETY: Region is an extern struct that has the same
-                // representation of 4 c_longs put next to each other.
-                // Therefore, reinterpretation should be safe.
-                // We don't have to care about endianness either since
-                // Xlib converts it to network byte order for us.
-                @ptrCast(std.mem.asBytes(&self.blur_region)),
-                4,
+                ._32,
+                .{ .mode = .replace },
+                &self.blur_region,
             );
         } else {
-            _ = c.XDeleteProperty(
-                self.app.display,
-                self.window,
-                self.app.kde_blur_atom,
-            );
+            try self.deleteProperty(self.app.atoms.kde_blur);
         }
+    }
+
+    fn syncDecorations(self: *Window) !void {
+        var hints: MotifWMHints = .{};
+
+        self.getWindowProperty(
+            MotifWMHints,
+            self.app.atoms.motif_wm_hints,
+            self.app.atoms.motif_wm_hints,
+            ._32,
+            .{},
+            &hints,
+        ) catch |err| switch (err) {
+            // motif_wm_hints is already initialized, so this is fine
+            error.PropertyNotFound => {},
+
+            error.RequestFailed,
+            error.PropertyTypeMismatch,
+            error.PropertyFormatMismatch,
+            => return err,
+        };
+
+        hints.flags.decorations = true;
+        hints.decorations.all = switch (self.config.window_decoration) {
+            .server => true,
+            .auto, .client, .none => false,
+        };
+
+        try self.changeProperty(
+            MotifWMHints,
+            self.app.atoms.motif_wm_hints,
+            self.app.atoms.motif_wm_hints,
+            ._32,
+            .{ .mode = .replace },
+            &hints,
+        );
+    }
+
+    fn getWindowProperty(
+        self: *Window,
+        comptime T: type,
+        name: c.Atom,
+        typ: c.Atom,
+        comptime format: PropertyFormat,
+        options: struct {
+            offset: c_long = 0,
+            length: c_long = std.math.maxInt(c_long),
+            delete: bool = false,
+        },
+        result: *T,
+    ) GetWindowPropertyError!void {
+        // FIXME: Maybe we should switch to libxcb one day.
+        // Sounds like a much better idea than whatever this is
+        var actual_type_return: c.Atom = undefined;
+        var actual_format_return: c_int = undefined;
+        var nitems_return: c_ulong = undefined;
+        var bytes_after_return: c_ulong = undefined;
+        var prop_return: ?format.bufferType() = null;
+
+        const code = c.XGetWindowProperty(
+            self.app.display,
+            self.window,
+            name,
+            options.offset,
+            options.length,
+            @intFromBool(options.delete),
+            typ,
+            &actual_type_return,
+            &actual_format_return,
+            &nitems_return,
+            &bytes_after_return,
+            &prop_return,
+        );
+        if (code != c.Success) return error.RequestFailed;
+
+        if (actual_type_return == c.None) return error.PropertyNotFound;
+        if (typ != actual_type_return) return error.PropertyTypeMismatch;
+        if (@intFromEnum(format) != actual_format_return) return error.PropertyFormatMismatch;
+
+        const data_ptr: *T = @ptrCast(prop_return);
+        result.* = data_ptr.*;
+        _ = c.XFree(prop_return);
+    }
+
+    fn changeProperty(
+        self: *Window,
+        comptime T: type,
+        name: c.Atom,
+        typ: c.Atom,
+        comptime format: PropertyFormat,
+        options: struct {
+            mode: PropertyChangeMode,
+        },
+        value: *T,
+    ) X11Error!void {
+        const data: format.bufferType() = @ptrCast(value);
+
+        const status = c.XChangeProperty(
+            self.app.display,
+            self.window,
+            name,
+            typ,
+            @intFromEnum(format),
+            @intFromEnum(options.mode),
+            data,
+            @divExact(@sizeOf(T), @sizeOf(format.elemType())),
+        );
+
+        // For some godforsaken reason Xlib alternates between
+        // error values (0 = success) and booleans (1 = success), and they look exactly
+        // the same in the signature (just `int`, since Xlib is written in C89)...
+        if (status == 0) return error.RequestFailed;
+    }
+
+    fn deleteProperty(self: *Window, name: c.Atom) X11Error!void {
+        const status = c.XDeleteProperty(self.app.display, self.window, name);
+        if (status == 0) return error.RequestFailed;
+    }
+};
+
+const X11Error = error{
+    RequestFailed,
+};
+
+const GetWindowPropertyError = X11Error || error{
+    PropertyNotFound,
+    PropertyTypeMismatch,
+    PropertyFormatMismatch,
+};
+
+const Atoms = struct {
+    kde_blur: c.Atom,
+    motif_wm_hints: c.Atom,
+
+    fn init(display: *c.GdkDisplay) Atoms {
+        return .{
+            .kde_blur = c.gdk_x11_get_xatom_by_name_for_display(
+                display,
+                "_KDE_NET_WM_BLUR_BEHIND_REGION",
+            ),
+            .motif_wm_hints = c.gdk_x11_get_xatom_by_name_for_display(
+                display,
+                "_MOTIF_WM_HINTS",
+            ),
+        };
+    }
+};
+
+const PropertyChangeMode = enum(c_int) {
+    replace = c.PropModeReplace,
+    prepend = c.PropModePrepend,
+    append = c.PropModeAppend,
+};
+
+const PropertyFormat = enum(c_int) {
+    _8 = 8,
+    _16 = 16,
+    _32 = 32,
+
+    fn elemType(comptime self: PropertyFormat) type {
+        return switch (self) {
+            ._8 => c_char,
+            ._16 => c_int,
+            ._32 => c_long,
+        };
+    }
+
+    fn bufferType(comptime self: PropertyFormat) type {
+        // The buffer type has to be a multi-pointer to bytes
+        // *aligned to the element type* (very important,
+        // otherwise you'll read garbage!)
+        //
+        // I know this is really ugly. X11 is ugly. I consider it apropos.
+        return [*]align(@alignOf(self.elemType())) u8;
     }
 };
 
@@ -294,4 +458,24 @@ const Region = extern struct {
     y: c_long = 0,
     width: c_long = 0,
     height: c_long = 0,
+};
+
+// See Xm/MwmUtil.h, packaged with the Motif Window Manager
+const MotifWMHints = extern struct {
+    flags: packed struct(c_ulong) {
+        _pad: u1 = 0,
+        decorations: bool = false,
+
+        // We don't really care about the other flags
+        _rest: std.meta.Int(.unsigned, @bitSizeOf(c_ulong) - 2) = 0,
+    } = .{},
+    functions: c_ulong = 0,
+    decorations: packed struct(c_ulong) {
+        all: bool = false,
+
+        // We don't really care about the other flags
+        _rest: std.meta.Int(.unsigned, @bitSizeOf(c_ulong) - 1) = 0,
+    } = .{},
+    input_mode: c_long = 0,
+    status: c_ulong = 0,
 };

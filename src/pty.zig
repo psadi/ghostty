@@ -41,12 +41,16 @@ pub const Mode = packed struct {
 // a termio that doesn't use a pty. This isn't used in any user-facing
 // artifacts, this is just a stopgap to get compilation to work on iOS.
 const NullPty = struct {
+    pub const Error = OpenError || GetModeError || SetSizeError || ChildPreExecError;
+
     pub const Fd = posix.fd_t;
 
     master: Fd,
     slave: Fd,
 
-    pub fn open(size: winsize) !Pty {
+    pub const OpenError = error{};
+
+    pub fn open(size: winsize) OpenError!Pty {
         _ = size;
         return .{ .master = 0, .slave = 0 };
     }
@@ -55,17 +59,23 @@ const NullPty = struct {
         _ = self;
     }
 
-    pub fn getMode(self: Pty) error{GetModeFailed}!Mode {
+    pub const GetModeError = error{GetModeFailed};
+
+    pub fn getMode(self: Pty) GetModeError!Mode {
         _ = self;
         return .{};
     }
 
-    pub fn setSize(self: *Pty, size: winsize) !void {
+    pub const SetSizeError = error{};
+
+    pub fn setSize(self: *Pty, size: winsize) SetSizeError!void {
         _ = self;
         _ = size;
     }
 
-    pub fn childPreExec(self: Pty) !void {
+    pub const ChildPreExecError = error{};
+
+    pub fn childPreExec(self: Pty) ChildPreExecError!void {
         _ = self;
     }
 };
@@ -74,6 +84,8 @@ const NullPty = struct {
 /// of Linux syscalls. The caller is responsible for detail-oriented handling
 /// of the returned file handles.
 const PosixPty = struct {
+    pub const Error = OpenError || GetModeError || GetSizeError || SetSizeError || ChildPreExecError;
+
     pub const Fd = posix.fd_t;
 
     // https://github.com/ziglang/zig/issues/13277
@@ -100,8 +112,10 @@ const PosixPty = struct {
     master: Fd,
     slave: Fd,
 
+    pub const OpenError = error{OpenptyFailed};
+
     /// Open a new PTY with the given initial size.
-    pub fn open(size: winsize) !Pty {
+    pub fn open(size: winsize) OpenError!Pty {
         // Need to copy so that it becomes non-const.
         var sizeCopy = size;
 
@@ -158,7 +172,9 @@ const PosixPty = struct {
         self.* = undefined;
     }
 
-    pub fn getMode(self: Pty) error{GetModeFailed}!Mode {
+    pub const GetModeError = error{GetModeFailed};
+
+    pub fn getMode(self: Pty) GetModeError!Mode {
         var attrs: c.termios = undefined;
         if (c.tcgetattr(self.master, &attrs) != 0)
             return error.GetModeFailed;
@@ -169,8 +185,10 @@ const PosixPty = struct {
         };
     }
 
+    pub const GetSizeError = error{IoctlFailed};
+
     /// Return the size of the pty.
-    pub fn getSize(self: Pty) !winsize {
+    pub fn getSize(self: Pty) GetSizeError!winsize {
         var ws: winsize = undefined;
         if (c.ioctl(self.master, TIOCGWINSZ, @intFromPtr(&ws)) < 0)
             return error.IoctlFailed;
@@ -178,15 +196,19 @@ const PosixPty = struct {
         return ws;
     }
 
+    pub const SetSizeError = error{IoctlFailed};
+
     /// Set the size of the pty.
-    pub fn setSize(self: *Pty, size: winsize) !void {
+    pub fn setSize(self: *Pty, size: winsize) SetSizeError!void {
         if (c.ioctl(self.master, TIOCSWINSZ, @intFromPtr(&size)) < 0)
             return error.IoctlFailed;
     }
 
+    pub const ChildPreExecError = error{ OperationNotSupported, ProcessGroupFailed, SetControllingTerminalFailed };
+
     /// This should be called prior to exec in the forked child process
     /// in order to setup the tty properly.
-    pub fn childPreExec(self: Pty) !void {
+    pub fn childPreExec(self: Pty) ChildPreExecError!void {
         // Reset our signals
         var sa: posix.Sigaction = .{
             .handler = .{ .handler = posix.SIG.DFL },
@@ -227,6 +249,8 @@ const PosixPty = struct {
 
 /// Windows PTY creation and management.
 const WindowsPty = struct {
+    pub const Error = OpenError || GetSizeError || SetSizeError;
+
     pub const Fd = windows.HANDLE;
 
     // Process-wide counter for pipe names
@@ -239,8 +263,10 @@ const WindowsPty = struct {
     pseudo_console: windows.exp.HPCON,
     size: winsize,
 
+    pub const OpenError = error{Unexpected};
+
     /// Open a new PTY with the given initial size.
-    pub fn open(size: winsize) !Pty {
+    pub fn open(size: winsize) OpenError!Pty {
         var pty: Pty = undefined;
 
         var pipe_path_buf: [128]u8 = undefined;
@@ -349,13 +375,17 @@ const WindowsPty = struct {
         self.* = undefined;
     }
 
+    pub const GetSizeError = error{};
+
     /// Return the size of the pty.
-    pub fn getSize(self: Pty) !winsize {
+    pub fn getSize(self: Pty) GetSizeError!winsize {
         return self.size;
     }
 
+    pub const SetSizeError = error{ResizeFailed};
+
     /// Set the size of the pty.
-    pub fn setSize(self: *Pty, size: winsize) !void {
+    pub fn setSize(self: *Pty, size: winsize) SetSizeError!void {
         const result = windows.exp.kernel32.ResizePseudoConsole(
             self.pseudo_console,
             .{ .X = @intCast(size.ws_col), .Y = @intCast(size.ws_row) },

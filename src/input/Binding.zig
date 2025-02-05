@@ -470,6 +470,8 @@ pub const Action = union(enum) {
     /// Ghostty becomes focused. When hiding all windows, focus is yielded
     /// to the next application as determined by the OS.
     ///
+    /// Note: When the focused surface is fullscreen, this method does nothing.
+    ///
     /// This currently only works on macOS.
     toggle_visibility: void,
 

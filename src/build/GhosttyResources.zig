@@ -215,10 +215,11 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
             "share/kio/servicemenus/com.mitchellh.ghostty.desktop",
         ).step);
 
-        // Right click menu action for Nautilus
+        // Right click menu action for Nautilus. Note that this _must_ be named
+        // `ghostty.py`. Using the full app id causes problems (see #5468).
         try steps.append(&b.addInstallFile(
             b.path("dist/linux/ghostty_nautilus.py"),
-            "share/nautilus-python/extensions/com.mitchellh.ghostty.py",
+            "share/nautilus-python/extensions/ghostty.py",
         ).step);
 
         // Various icons that our application can use, including the icon

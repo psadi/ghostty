@@ -251,12 +251,13 @@ pub const Window = struct {
     }
 
     pub fn clientSideDecorationEnabled(self: Window) bool {
-        // Compositor doesn't support the SSD protocol
-        if (self.decoration == null) return true;
-
         return switch (self.getDecorationMode()) {
             .Client => true,
-            .Server, .None => false,
+            // If we support SSDs, then we should *not* enable CSDs if we prefer SSDs.
+            // However, if we do not support SSDs (e.g. GNOME) then we should enable
+            // CSDs even if the user prefers SSDs.
+            .Server => if (self.app_context.kde_decoration_manager) |_| false else true,
+            .None => false,
             else => unreachable,
         };
     }

@@ -78,6 +78,89 @@ pull request will be accepted with a high degree of certainty.
 > not open a WIP pull request to discuss a feature. Instead, use a discussion
 > and link to your branch.
 
+# Developer Guide
+
+> [!NOTE]
+>
+> **The remainder of this file is dedicated to developers actively
+> working on Ghostty.** If you're a user reporting an issue, you can
+> ignore the rest of this document.
+
+## Input Stack Testing
+
+The input stack is the part of the codebase that starts with a
+key event and ends with text encoding being sent to the pty (it
+does not include _rendering_ the text, which is part of the
+font or rendering stack).
+
+If you modify any part of the input stack, you must manually verify
+all the following input cases work properly. We unfortunately do
+not automate this in any way, but if we can do that one day that'd
+save a LOT of grief and time.
+
+Note: this list may not be exhaustive, I'm still working on it.
+
+### Linux IME
+
+IME (Input Method Editors) are a common source of bugs in the input stack,
+especially on Linux since there are multiple different IME systems
+interacting with different windowing systems and application frameworks
+all written by different organizations.
+
+The following matrix should be tested to ensure that all IME input works
+properly:
+
+1. Wayland, X11
+2. ibus, fcitx, none
+3. Dead key input (e.g. Spanish), CJK (e.g. Japanese), Emoji, Unicode Hex
+4. ibus versions: 1.5.29, 1.5.30, 1.5.31 (each exhibit slightly different behaviors)
+
+> [!NOTE]
+>
+> This is a **work in progress**. I'm still working on this list and it
+> is not complete. As I find more test cases, I will add them here.
+
+#### Dead Key Input
+
+Set your keyboard layout to "Spanish" (or another layout that uses dead keys).
+
+1. Launch Ghostty
+2. Press `'`
+3. Press `a`
+4. Verify that `á` is displayed
+
+Note that the dead key may or may not show a preedit state visually.
+For ibus and fcitx it does but for the "none" case it does not. Importantly,
+the text should be correct when it is sent to the pty.
+
+We should also test canceling dead key input:
+
+1. Launch Ghostty
+2. Press `'`
+3. Press escape
+4. Press `a`
+5. Verify that `a` is displayed (no diacritic)
+
+#### CJK Input
+
+Configure fcitx or ibus with a keyboard layout like Japanese or Mozc. The
+exact layout doesn't matter.
+
+1. Launch Ghostty
+2. Press `Ctrl+Shift` to switch to "Hiragana"
+3. On a US physical layout, type: `konn`, you should see `こん` in preedit.
+4. Press `Enter`
+5. Verify that `こん` is displayed in the terminal.
+
+We should also test switching input methods while preedit is active, which
+should commit the text:
+
+1. Launch Ghostty
+2. Press `Ctrl+Shift` to switch to "Hiragana"
+3. On a US physical layout, type: `konn`, you should see `こん` in preedit.
+4. Press `Ctrl+Shift` to switch to another layout (any)
+5. Verify that `こん` is displayed in the terminal as committed text.
+
 ## Nix Virtual Machines
 
 Several Nix virtual machine definitions are provided by the project for testing

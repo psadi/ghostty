@@ -238,6 +238,14 @@ pub const App = struct {
                 translate_mods,
             );
 
+            // TODO(mitchellh): I think we can get rid of the above keymap
+            // translation code completely and defer to AppKit/Swift
+            // (for macOS) for handling all translations. The translation
+            // within libghostty is an artifact of an earlier design and
+            // it is buggy (see #5558). We should move closer to a GTK-style
+            // model of tracking composing states and preedit in the apprt
+            // and not in libghostty.
+
             // If this is a dead key, then we're composing a character and
             // we need to set our proper preedit state if we're targeting a
             // surface.
@@ -1652,7 +1660,12 @@ pub const CAPI = struct {
         event: KeyEvent,
     ) bool {
         const core_event = surface.app.coreKeyEvent(
-            .{ .surface = surface },
+            // Note: this "app" target here looks like a bug, but it is
+            // intentional. coreKeyEvent uses the target only as a way to
+            // trigger preedit callbacks for keymap translation and we don't
+            // want to trigger that here. See the todo item in coreKeyEvent
+            // for a long term solution to this and removing target altogether.
+            .app,
             event.keyEvent(),
         ) catch |err| {
             log.warn("error processing key event err={}", .{err});
