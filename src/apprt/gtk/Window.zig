@@ -667,6 +667,7 @@ fn gtkWindowNotifyDecorated(
     // class is defined in the GtkWindow documentation:
     // https://docs.gtk.org/gtk4/class.Window.html#css-nodes. A definition
     // for .ssd is provided by GTK and Adwaita.
+    toggleCssClass(@ptrCast(object), "csd", is_decorated);
     toggleCssClass(@ptrCast(object), "ssd", !is_decorated);
     toggleCssClass(@ptrCast(object), "no-border-radius", !is_decorated);
 

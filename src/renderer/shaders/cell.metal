@@ -471,16 +471,15 @@ vertex CellTextVertexOut cell_text_vertex(
     out.color = contrasted_color(uniforms.min_contrast, out.color, out.bg_color);
   }
 
-  // If this cell is the cursor cell, then we need to change the color.
-  if (
-    in.mode != MODE_TEXT_CURSOR &&
-    (
+  // Check if current position is under cursor (including wide cursor)
+  bool is_cursor_pos = (
       in.grid_pos.x == uniforms.cursor_pos.x ||
       uniforms.cursor_wide &&
         in.grid_pos.x == uniforms.cursor_pos.x + 1
-    ) &&
-    in.grid_pos.y == uniforms.cursor_pos.y
-  ) {
+    ) && in.grid_pos.y == uniforms.cursor_pos.y;
+
+  // If this cell is the cursor cell, then we need to change the color.
+  if (in.mode != MODE_TEXT_CURSOR && is_cursor_pos) {
     out.color = load_color(
       uniforms.cursor_color,
       uniforms.use_display_p3,
@@ -490,7 +489,8 @@ vertex CellTextVertexOut cell_text_vertex(
 
   // Don't bother rendering if the bg and fg colors are identical, just return
   // the same point which will be culled because it makes the quad zero sized.
-  if (all(out.color == out.bg_color)) {
+  // However, we should still render if this is the cursor position
+  if (all(out.color == out.bg_color) && !is_cursor_pos) {
     out.position = float4(0.0);
   }
 
