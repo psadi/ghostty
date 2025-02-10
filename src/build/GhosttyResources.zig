@@ -199,7 +199,13 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
 
         // AppStream specification: https://www.freedesktop.org/wiki/Distributions/AppStream
         try steps.append(&b.addInstallFile(
-            b.path("dist/linux/ghostty.appdata.xml"),
+            b.path("dist/linux/ghostty.metainfo.xml"),
+            "share/metainfo/com.mitchellh.ghostty.metainfo.xml",
+        ).step);
+
+        // for legacy systems
+        try steps.append(&b.addInstallFile(
+            b.path("dist/linux/ghostty.metainfo.xml"),
             "share/metainfo/com.mitchellh.ghostty.appdata.xml",
         ).step);
 
