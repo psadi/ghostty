@@ -801,6 +801,13 @@ pub const Delete = union(enum) {
         z: i32 = 0, // z
     },
 
+    // r/R
+    range: struct {
+        delete: bool = false, // uppercase
+        first: u32 = 0, // x
+        last: u32 = 0, // y
+    },
+
     // x/X
     column: struct {
         delete: bool = false, // uppercase
@@ -883,6 +890,19 @@ pub const Delete = union(enum) {
                 }
 
                 break :blk result;
+            },
+
+            'r', 'R' => blk: {
+                const x = kv.get('x') orelse return error.InvalidFormat;
+                const y = kv.get('y') orelse return error.InvalidFormat;
+                if (x > y) return error.InvalidFormat;
+                break :blk .{
+                    .range = .{
+                        .delete = what == 'R',
+                        .first = x,
+                        .last = y,
+                    },
+                };
             },
 
             'x', 'X' => blk: {
@@ -1196,4 +1216,77 @@ test "response: encode with image ID and number" {
     var r: Response = .{ .id = 12, .image_number = 4 };
     try r.encode(fbs.writer());
     try testing.expectEqualStrings("\x1b_Gi=12,I=4;OK\x1b\\", fbs.getWritten());
+}
+
+test "delete range command 1" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var p = Parser.init(alloc);
+    defer p.deinit();
+
+    const input = "a=d,d=r,x=3,y=4";
+    for (input) |c| try p.feed(c);
+    const command = try p.complete();
+    defer command.deinit(alloc);
+
+    try testing.expect(command.control == .delete);
+    const v = command.control.delete;
+    try testing.expect(v == .range);
+    const range = v.range;
+    try testing.expect(!range.delete);
+    try testing.expectEqual(@as(u32, 3), range.first);
+    try testing.expectEqual(@as(u32, 4), range.last);
+}
+
+test "delete range command 2" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var p = Parser.init(alloc);
+    defer p.deinit();
+
+    const input = "a=d,d=R,x=5,y=11";
+    for (input) |c| try p.feed(c);
+    const command = try p.complete();
+    defer command.deinit(alloc);
+
+    try testing.expect(command.control == .delete);
+    const v = command.control.delete;
+    try testing.expect(v == .range);
+    const range = v.range;
+    try testing.expect(range.delete);
+    try testing.expectEqual(@as(u32, 5), range.first);
+    try testing.expectEqual(@as(u32, 11), range.last);
+}
+
+test "delete range command 3" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var p = Parser.init(alloc);
+    defer p.deinit();
+
+    const input = "a=d,d=R,x=5,y=4";
+    for (input) |c| try p.feed(c);
+    try testing.expectError(error.InvalidFormat, p.complete());
+}
+
+test "delete range command 4" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var p = Parser.init(alloc);
+    defer p.deinit();
+
+    const input = "a=d,d=R,x=5";
+    for (input) |c| try p.feed(c);
+    try testing.expectError(error.InvalidFormat, p.complete());
+}
+
+test "delete range command 5" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var p = Parser.init(alloc);
+    defer p.deinit();
+
+    const input = "a=d,d=R,y=5";
+    for (input) |c| try p.feed(c);
+    try testing.expectError(error.InvalidFormat, p.complete());
 }

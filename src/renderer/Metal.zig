@@ -11,7 +11,7 @@ const objc = @import("objc");
 const macos = @import("macos");
 const imgui = @import("imgui");
 const glslang = @import("glslang");
-const xev = @import("xev");
+const xev = @import("../global.zig").xev;
 const apprt = @import("../apprt.zig");
 const configpkg = @import("../config.zig");
 const font = @import("../font/main.zig");
@@ -1019,6 +1019,10 @@ pub fn setFontGrid(self: *Metal, grid: *font.SharedGrid) void {
         // out a better way to handle this.
         log.err("error resizing cells buffer err={}", .{err});
     };
+
+    // Reset our viewport to force a rebuild, since `setScreenSize` only
+    // does this when the number of cells changes, which isn't guaranteed.
+    self.cells_viewport = null;
 }
 
 /// Update the frame data.

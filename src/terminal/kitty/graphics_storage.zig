@@ -397,6 +397,30 @@ pub const ImageStorage = struct {
                 self.dirty = true;
             },
 
+            .range => |v| range: {
+                if (v.first <= 0 or v.last <= 0) {
+                    log.warn("delete range values must be greater than zero", .{});
+                    break :range;
+                }
+                if (v.first > v.last) {
+                    log.warn("delete range 'x' ({}) must be less than or equal to 'y' ({})", .{ v.first, v.last });
+                    break :range;
+                }
+
+                var it = self.placements.iterator();
+                while (it.next()) |entry| {
+                    if (entry.key_ptr.image_id >= v.first or entry.key_ptr.image_id <= v.last) {
+                        const image_id = entry.key_ptr.image_id;
+                        entry.value_ptr.deinit(&t.screen);
+                        self.placements.removeByPtr(entry.key_ptr);
+                        if (v.delete) self.deleteIfUnused(alloc, image_id);
+                    }
+                }
+
+                // Mark dirty to force redraw
+                self.dirty = true;
+            },
+
             // We don't support animation frames yet so they are successfully
             // deleted!
             .animation_frames => {},
@@ -1110,4 +1134,104 @@ test "storage: delete by row 1x1" {
         .image_id = 1,
         .placement_id = .{ .tag = .external, .id = 3 },
     }) != null);
+}
+
+test "storage: delete images by range 1" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, .{ .rows = 3, .cols = 3 });
+    defer t.deinit(alloc);
+    const tracked = t.screen.pages.countTrackedPins();
+
+    var s: ImageStorage = .{};
+    defer s.deinit(alloc, &t.screen);
+    try s.addImage(alloc, .{ .id = 1 });
+    try s.addImage(alloc, .{ .id = 2 });
+    try s.addImage(alloc, .{ .id = 3 });
+    try s.addPlacement(alloc, 1, 1, .{ .location = .{ .pin = try trackPin(&t, .{ .x = 1, .y = 1 }) } });
+    try s.addPlacement(alloc, 2, 1, .{ .location = .{ .pin = try trackPin(&t, .{ .x = 1, .y = 1 }) } });
+    try testing.expectEqual(@as(usize, 3), s.images.count());
+    try testing.expectEqual(@as(usize, 2), s.placements.count());
+
+    s.dirty = false;
+    s.delete(alloc, &t, .{ .range = .{ .delete = false, .first = 1, .last = 2 } });
+    try testing.expect(s.dirty);
+    try testing.expectEqual(@as(usize, 3), s.images.count());
+    try testing.expectEqual(@as(usize, 0), s.placements.count());
+    try testing.expectEqual(tracked, t.screen.pages.countTrackedPins());
+}
+
+test "storage: delete images by range 2" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, .{ .rows = 3, .cols = 3 });
+    defer t.deinit(alloc);
+    const tracked = t.screen.pages.countTrackedPins();
+
+    var s: ImageStorage = .{};
+    defer s.deinit(alloc, &t.screen);
+    try s.addImage(alloc, .{ .id = 1 });
+    try s.addImage(alloc, .{ .id = 2 });
+    try s.addImage(alloc, .{ .id = 3 });
+    try s.addPlacement(alloc, 1, 1, .{ .location = .{ .pin = try trackPin(&t, .{ .x = 1, .y = 1 }) } });
+    try s.addPlacement(alloc, 2, 1, .{ .location = .{ .pin = try trackPin(&t, .{ .x = 1, .y = 1 }) } });
+    try testing.expectEqual(@as(usize, 3), s.images.count());
+    try testing.expectEqual(@as(usize, 2), s.placements.count());
+
+    s.dirty = false;
+    s.delete(alloc, &t, .{ .range = .{ .delete = true, .first = 1, .last = 2 } });
+    try testing.expect(s.dirty);
+    try testing.expectEqual(@as(usize, 1), s.images.count());
+    try testing.expectEqual(@as(usize, 0), s.placements.count());
+    try testing.expectEqual(tracked, t.screen.pages.countTrackedPins());
+}
+
+test "storage: delete images by range 3" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, .{ .rows = 3, .cols = 3 });
+    defer t.deinit(alloc);
+    const tracked = t.screen.pages.countTrackedPins();
+
+    var s: ImageStorage = .{};
+    defer s.deinit(alloc, &t.screen);
+    try s.addImage(alloc, .{ .id = 1 });
+    try s.addImage(alloc, .{ .id = 2 });
+    try s.addImage(alloc, .{ .id = 3 });
+    try s.addPlacement(alloc, 1, 1, .{ .location = .{ .pin = try trackPin(&t, .{ .x = 1, .y = 1 }) } });
+    try s.addPlacement(alloc, 2, 1, .{ .location = .{ .pin = try trackPin(&t, .{ .x = 1, .y = 1 }) } });
+    try testing.expectEqual(@as(usize, 3), s.images.count());
+    try testing.expectEqual(@as(usize, 2), s.placements.count());
+
+    s.dirty = false;
+    s.delete(alloc, &t, .{ .range = .{ .delete = false, .first = 1, .last = 1 } });
+    try testing.expect(s.dirty);
+    try testing.expectEqual(@as(usize, 3), s.images.count());
+    try testing.expectEqual(@as(usize, 0), s.placements.count());
+    try testing.expectEqual(tracked, t.screen.pages.countTrackedPins());
+}
+
+test "storage: delete images by range 4" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var t = try terminal.Terminal.init(alloc, .{ .rows = 3, .cols = 3 });
+    defer t.deinit(alloc);
+    const tracked = t.screen.pages.countTrackedPins();
+
+    var s: ImageStorage = .{};
+    defer s.deinit(alloc, &t.screen);
+    try s.addImage(alloc, .{ .id = 1 });
+    try s.addImage(alloc, .{ .id = 2 });
+    try s.addImage(alloc, .{ .id = 3 });
+    try s.addPlacement(alloc, 1, 1, .{ .location = .{ .pin = try trackPin(&t, .{ .x = 1, .y = 1 }) } });
+    try s.addPlacement(alloc, 2, 1, .{ .location = .{ .pin = try trackPin(&t, .{ .x = 1, .y = 1 }) } });
+    try testing.expectEqual(@as(usize, 3), s.images.count());
+    try testing.expectEqual(@as(usize, 2), s.placements.count());
+
+    s.dirty = false;
+    s.delete(alloc, &t, .{ .range = .{ .delete = true, .first = 1, .last = 1 } });
+    try testing.expect(s.dirty);
+    try testing.expectEqual(@as(usize, 1), s.images.count());
+    try testing.expectEqual(@as(usize, 0), s.placements.count());
+    try testing.expectEqual(tracked, t.screen.pages.countTrackedPins());
 }

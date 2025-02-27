@@ -45,7 +45,21 @@ window.ssd.no-border-radius {
   background-color: transparent;
 }
 
-.terminal-window .notebook separator {
+.terminal-window .notebook paned > separator {
   background-color: rgba(250, 250, 250, 1);
   background-clip: content-box;
+
+  /* This works around the oversized drag area for the right side of GtkPaned.
+   *
+   * Upstream Gtk issue:
+   * https://gitlab.gnome.org/GNOME/gtk/-/issues/4484#note_2362002
+   *
+   * Ghostty issue:
+   * https://github.com/ghostty-org/ghostty/issues/3020
+   *
+   * Without this, it's not possible to select the first character on the
+   * right-hand side of a split.
+   */
+  margin: 0;
+  padding: 0;
 }

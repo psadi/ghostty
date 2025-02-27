@@ -2,8 +2,12 @@
 /// each individual surface into its own cgroup.
 const std = @import("std");
 const assert = std.debug.assert;
+
+const gio = @import("gio");
+const glib = @import("glib");
+const gobject = @import("gobject");
+
 const Allocator = std.mem.Allocator;
-const c = @import("c.zig").c;
 const App = @import("App.zig");
 const internal_os = @import("../../os/main.zig");
 
@@ -15,8 +19,6 @@ const log = std.log.scoped(.gtk_systemd_cgroup);
 pub fn init(app: *App) ![]const u8 {
     const pid = std.os.linux.getpid();
     const alloc = app.core_app.alloc;
-    const connection = c.g_application_get_dbus_connection(@ptrCast(app.app)) orelse
-        return error.DbusConnectionRequired;
 
     // Get our initial cgroup. We need this so we can compare
     // and detect when we've switched to our transient group.
@@ -29,7 +31,7 @@ pub fn init(app: *App) ![]const u8 {
     // Create our transient scope. If this succeeds then the unit
     // was created, but we may not have moved into it yet, so we need
     // to do a dumb busy loop to wait for the move to complete.
-    try createScope(connection);
+    try createScope(app, pid);
     const transient = transient: while (true) {
         const current = try internal_os.cgroup.current(
             alloc,
@@ -110,9 +112,13 @@ fn enableControllers(alloc: Allocator, cgroup: []const u8) !void {
 ///
 /// On success this will return the name of the transient scope
 /// cgroup prefix, allocated with the given allocator.
-fn createScope(connection: *c.GDBusConnection) !void {
-    // Our pid that we will move into the cgroup
-    const pid: c.guint32 = @intCast(std.os.linux.getpid());
+fn createScope(app: *App, pid_: std.os.linux.pid_t) !void {
+    // FIXME: when app.app gets converted to gobject
+    const g_app: *gio.Application = @ptrCast(@alignCast(app.app));
+    const connection = g_app.getDbusConnection() orelse
+        return error.DbusConnectionRequired;
+
+    const pid: u32 = @intCast(pid_);
 
     // The unit name needs to be unique. We use the pid for this.
     var name_buf: [256]u8 = undefined;
@@ -122,70 +128,79 @@ fn createScope(connection: *c.GDBusConnection) !void {
         .{pid},
     ) catch unreachable;
 
+    const builder_type = glib.VariantType.new("(ssa(sv)a(sa(sv)))");
+    defer glib.free(builder_type);
+
     // Initialize our builder to build up our parameters
-    var builder: c.GVariantBuilder = undefined;
-    c.g_variant_builder_init(&builder, c.G_VARIANT_TYPE("(ssa(sv)a(sa(sv)))"));
-    c.g_variant_builder_add(&builder, "s", name.ptr);
-    c.g_variant_builder_add(&builder, "s", "fail");
+    var builder: glib.VariantBuilder = undefined;
+    builder.init(builder_type);
+
+    builder.add("s", name.ptr);
+    builder.add("s", "fail");
+
     {
         // Properties
-        c.g_variant_builder_open(&builder, c.G_VARIANT_TYPE("a(sv)"));
-        defer c.g_variant_builder_close(&builder);
+        const properties_type = glib.VariantType.new("a(sv)");
+        defer glib.free(properties_type);
+
+        builder.open(properties_type);
+        defer builder.close();
 
         // https://www.freedesktop.org/software/systemd/man/latest/systemd-oomd.service.html
-        c.g_variant_builder_add(
-            &builder,
-            "(sv)",
-            "ManagedOOMMemoryPressure",
-            c.g_variant_new_string("kill"),
-        );
+        const pressure_value = glib.Variant.newString("kill");
+
+        builder.add("(sv)", "ManagedOOMMemoryPressure", pressure_value);
 
         // Delegate
-        c.g_variant_builder_add(
-            &builder,
-            "(sv)",
-            "Delegate",
-            c.g_variant_new_boolean(1),
-        );
+        const delegate_value = glib.Variant.newBoolean(1);
+        builder.add("(sv)", "Delegate", delegate_value);
 
         // Pid to move into the unit
-        c.g_variant_builder_add(
-            &builder,
-            "(sv)",
-            "PIDs",
-            c.g_variant_new_fixed_array(
-                c.G_VARIANT_TYPE("u"),
-                &pid,
-                1,
-                @sizeOf(c.guint32),
-            ),
-        );
-    }
-    {
-        // Aux
-        c.g_variant_builder_open(&builder, c.G_VARIANT_TYPE("a(sa(sv))"));
-        defer c.g_variant_builder_close(&builder);
+        const pids_value_type = glib.VariantType.new("u");
+        defer glib.free(pids_value_type);
+
+        const pids_value = glib.Variant.newFixedArray(pids_value_type, &pid, 1, @sizeOf(u32));
+
+        builder.add("(sv)", "PIDs", pids_value);
     }
 
-    var err: ?*c.GError = null;
-    defer if (err) |e| c.g_error_free(e);
-    _ = c.g_dbus_connection_call_sync(
-        connection,
+    {
+        // Aux
+        const aux_type = glib.VariantType.new("a(sa(sv))");
+        defer glib.free(aux_type);
+
+        builder.open(aux_type);
+        defer builder.close();
+    }
+
+    var err: ?*glib.Error = null;
+    defer if (err) |e| e.free();
+
+    const reply_type = glib.VariantType.new("(o)");
+    defer glib.free(reply_type);
+
+    const value = builder.end();
+
+    const reply = connection.callSync(
         "org.freedesktop.systemd1",
         "/org/freedesktop/systemd1",
         "org.freedesktop.systemd1.Manager",
         "StartTransientUnit",
-        c.g_variant_builder_end(&builder),
-        c.G_VARIANT_TYPE("(o)"),
-        c.G_DBUS_CALL_FLAGS_NONE,
+        value,
+        reply_type,
+        .{},
         -1,
         null,
         &err,
     ) orelse {
         if (err) |e| log.err(
             "creating transient cgroup scope failed code={} err={s}",
-            .{ e.code, e.message },
+            .{
+                e.f_code,
+                if (e.f_message) |msg| msg else "(no message)",
+            },
         );
         return error.DbusCallFailed;
     };
+    defer reply.unref();
 }

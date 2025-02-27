@@ -1,0 +1,31 @@
+using Gtk 4.0;
+using Adw 1;
+translation-domain "com.mitchellh.ghostty";
+
+Adw.MessageDialog clipboard_confirmation_window {
+  heading: _("Warning: Potentially Unsafe Paste");
+  body: _("Pasting this text into the terminal may be dangerous as it looks like some commands may be executed.");
+
+  responses [
+    cancel: _("Cancel") suggested,
+    ok: _("Paste") destructive
+  ]
+
+  default-response: "cancel";
+  close-response: "cancel";
+
+  extra-child: ScrolledWindow {
+    width-request: 500;
+    height-request: 250;
+
+    TextView text_view {
+      cursor-visible: false;
+      editable: false;
+      monospace: true;
+      top-margin: 8;
+      left-margin: 8;
+      bottom-margin: 8;
+      right-margin: 8;
+    }
+  };
+}

@@ -3,6 +3,10 @@ import Cocoa
 class TerminalWindow: NSWindow {
     @objc dynamic var keyEquivalent: String = ""
 
+    /// This is used to determine if certain elements should be drawn light or dark and should
+    /// be updated whenever the window background color or surrounding elements changes.
+    var isLightTheme: Bool = false
+
     lazy var titlebarColor: NSColor = backgroundColor {
         didSet {
             guard let titlebarContainer else { return }
@@ -295,7 +299,6 @@ class TerminalWindow: NSWindow {
 
 
         if newTabButtonImageLayer == nil {
-            let isLightTheme = backgroundColor.isLightColor
 			let fillColor: NSColor = isLightTheme ? .black.withAlphaComponent(0.85) : .white.withAlphaComponent(0.85)
 			let newImage = NSImage(size: newTabButtonImage.size, flipped: false) { rect in
 				newTabButtonImage.draw(in: rect)
@@ -714,7 +717,7 @@ fileprivate class WindowButtonsBackdropView: NSView {
 
     init(window: TerminalWindow) {
 		self.terminalWindow = window
-		self.isLightTheme = window.backgroundColor.isLightColor
+        self.isLightTheme = window.isLightTheme
 
         super.init(frame: .zero)
 

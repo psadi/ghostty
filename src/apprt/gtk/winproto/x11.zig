@@ -7,6 +7,7 @@ const c = @import("../c.zig").c;
 const input = @import("../../../input.zig");
 const Config = @import("../../../config.zig").Config;
 const adwaita = @import("../adwaita.zig");
+const ApprtWindow = @import("../Window.zig");
 
 const log = std.log.scoped(.gtk_x11);
 
@@ -151,33 +152,21 @@ pub const App = struct {
 
 pub const Window = struct {
     app: *App,
-    alloc: Allocator,
-    config: DerivedConfig,
+    config: *const ApprtWindow.DerivedConfig,
     window: c.Window,
     gtk_window: *c.GtkWindow,
 
     blur_region: Region = .{},
 
-    const DerivedConfig = struct {
-        blur: bool,
-        window_decoration: Config.WindowDecoration,
-
-        pub fn init(config: *const Config) DerivedConfig {
-            return .{
-                .blur = config.@"background-blur".enabled(),
-                .window_decoration = config.@"window-decoration",
-            };
-        }
-    };
-
     pub fn init(
         alloc: Allocator,
         app: *App,
-        gtk_window: *c.GtkWindow,
-        config: *const Config,
+        apprt_window: *ApprtWindow,
     ) !Window {
+        _ = alloc;
+
         const surface = c.gtk_native_get_surface(
-            @ptrCast(gtk_window),
+            @ptrCast(apprt_window.window),
         ) orelse return error.NotX11Surface;
 
         // Check if we're actually on X11
@@ -188,23 +177,15 @@ pub const Window = struct {
 
         return .{
             .app = app,
-            .alloc = alloc,
-            .config = DerivedConfig.init(config),
+            .config = &apprt_window.config,
             .window = c.gdk_x11_surface_get_xid(surface),
-            .gtk_window = gtk_window,
+            .gtk_window = apprt_window.window,
         };
     }
 
     pub fn deinit(self: Window, alloc: Allocator) void {
         _ = self;
         _ = alloc;
-    }
-
-    pub fn updateConfigEvent(
-        self: *Window,
-        config: *const Config,
-    ) !void {
-        self.config = DerivedConfig.init(config);
     }
 
     pub fn resizeEvent(self: *Window) !void {
@@ -257,14 +238,14 @@ pub const Window = struct {
         // and I think it's not really noticeable enough to justify the effort.
         // (Wayland also has this visual artifact anyway...)
 
-        const blur = self.config.blur;
+        const blur = self.config.background_blur;
         log.debug("set blur={}, window xid={}, region={}", .{
             blur,
             self.window,
             self.blur_region,
         });
 
-        if (blur) {
+        if (blur.enabled()) {
             try self.changeProperty(
                 Region,
                 self.app.atoms.kde_blur,
@@ -312,6 +293,13 @@ pub const Window = struct {
             .{ .mode = .replace },
             &hints,
         );
+    }
+
+    pub fn addSubprocessEnv(self: *Window, env: *std.process.EnvMap) !void {
+        var buf: [64]u8 = undefined;
+        const window_id = try std.fmt.bufPrint(&buf, "{}", .{self.window});
+
+        try env.put("WINDOWID", window_id);
     }
 
     fn getWindowProperty(

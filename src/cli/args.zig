@@ -8,6 +8,8 @@ const internal_os = @import("../os/main.zig");
 const Diagnostic = diags.Diagnostic;
 const DiagnosticList = diags.DiagnosticList;
 
+const log = std.log.scoped(.cli);
+
 // TODO:
 //   - Only `--long=value` format is accepted. Do we want to allow
 //     `--long value`? Not currently allowed.
@@ -245,16 +247,6 @@ pub fn parseIntoField(
 
     inline for (info.Struct.fields) |field| {
         if (field.name[0] != '_' and mem.eql(u8, field.name, key)) {
-            // If the value is empty string (set but empty string),
-            // then we reset the value to the default.
-            if (value) |v| default: {
-                if (v.len != 0) break :default;
-                const raw = field.default_value orelse break :default;
-                const ptr: *const field.type = @alignCast(@ptrCast(raw));
-                @field(dst, field.name) = ptr.*;
-                return;
-            }
-
             // For optional fields, we just treat it as the child type.
             // This lets optional fields default to null but get set by
             // the CLI.
@@ -262,11 +254,27 @@ pub fn parseIntoField(
                 .Optional => |opt| opt.child,
                 else => field.type,
             };
+            const fieldInfo = @typeInfo(Field);
+            const canHaveDecls = fieldInfo == .Struct or fieldInfo == .Union or fieldInfo == .Enum;
+
+            // If the value is empty string (set but empty string),
+            // then we reset the value to the default.
+            if (value) |v| default: {
+                if (v.len != 0) break :default;
+                // Set default value if possible.
+                if (canHaveDecls and @hasDecl(Field, "init")) {
+                    try @field(dst, field.name).init(alloc);
+                    return;
+                }
+                const raw = field.default_value orelse break :default;
+                const ptr: *const field.type = @alignCast(@ptrCast(raw));
+                @field(dst, field.name) = ptr.*;
+                return;
+            }
 
             // If we are a type that can have decls and have a parseCLI decl,
             // we call that and use that to set the value.
-            const fieldInfo = @typeInfo(Field);
-            if (fieldInfo == .Struct or fieldInfo == .Union or fieldInfo == .Enum) {
+            if (canHaveDecls) {
                 if (@hasDecl(Field, "parseCLI")) {
                     const fnInfo = @typeInfo(@TypeOf(Field.parseCLI)).Fn;
                     switch (fnInfo.params.len) {
@@ -757,6 +765,29 @@ test "parseIntoField: ignore underscore-prefixed fields" {
         parseIntoField(@TypeOf(data), alloc, &data, "_a", "42"),
     );
     try testing.expectEqualStrings("12", data._a);
+}
+
+test "parseIntoField: struct with init func" {
+    const testing = std.testing;
+    var arena = ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var data: struct {
+        a: struct {
+            const Self = @This();
+
+            v: []const u8,
+
+            pub fn init(self: *Self, _alloc: Allocator) !void {
+                _ = _alloc;
+                self.* = .{ .v = "HELLO!" };
+            }
+        },
+    } = undefined;
+
+    try parseIntoField(@TypeOf(data), alloc, &data, "a", "");
+    try testing.expectEqual(@as([]const u8, "HELLO!"), data.a.v);
 }
 
 test "parseIntoField: string" {
@@ -1258,9 +1289,11 @@ pub fn LineIterator(comptime ReaderType: type) type {
             const buf = buf: {
                 while (true) {
                     // Read the full line
-                    var entry = self.r.readUntilDelimiterOrEof(self.entry[2..], '\n') catch {
-                        // TODO: handle errors
-                        unreachable;
+                    var entry = self.r.readUntilDelimiterOrEof(self.entry[2..], '\n') catch |err| switch (err) {
+                        inline else => |e| {
+                            log.warn("cannot read from \"{s}\": {}", .{ self.filepath, e });
+                            return null;
+                        },
                     } orelse return null;
 
                     // Increment our line counter

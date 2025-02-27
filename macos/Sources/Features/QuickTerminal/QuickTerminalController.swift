@@ -59,6 +59,11 @@ class QuickTerminalController: BaseTerminalController {
             selector: #selector(ghosttyConfigDidChange(_:)),
             name: .ghosttyConfigDidChange,
             object: nil)
+        center.addObserver(
+            self,
+            selector: #selector(onNewTab),
+            name: Ghostty.Notification.ghosttyNewTab,
+            object: nil)
     }
 
     required init?(coder: NSCoder) {
@@ -437,6 +442,16 @@ class QuickTerminalController: BaseTerminalController {
         }
     }
 
+    private func showNoNewTabAlert() {
+        guard let window else { return }
+        let alert = NSAlert()
+        alert.messageText = "Cannot Create New Tab"
+        alert.informativeText = "Tabs aren't supported in the Quick Terminal."
+        alert.addButton(withTitle: "OK")
+        alert.alertStyle = .warning
+        alert.beginSheetModal(for: window)
+    }
+
     // MARK: First Responder
 
     @IBAction override func closeWindow(_ sender: Any) {
@@ -445,13 +460,7 @@ class QuickTerminalController: BaseTerminalController {
     }
 
     @IBAction func newTab(_ sender: Any?) {
-        guard let window else { return }
-        let alert = NSAlert()
-        alert.messageText = "Cannot Create New Tab"
-        alert.informativeText = "Tabs aren't supported in the Quick Terminal."
-        alert.addButton(withTitle: "OK")
-        alert.alertStyle = .warning
-        alert.beginSheetModal(for: window)
+        showNoNewTabAlert()
     }
 
     @IBAction func toggleGhosttyFullScreen(_ sender: Any) {
@@ -490,6 +499,14 @@ class QuickTerminalController: BaseTerminalController {
         self.derivedConfig = DerivedConfig(config)
 
         syncAppearance()
+    }
+
+    @objc private func onNewTab(notification: SwiftUI.Notification) {
+        guard let surfaceView = notification.object as? Ghostty.SurfaceView else { return }
+        guard let window = surfaceView.window else { return }
+        guard window.windowController is QuickTerminalController else { return }
+        // Tabs aren't supported with Quick Terminals or derivatives
+        showNoNewTabAlert()
     }
 
     private struct DerivedConfig {

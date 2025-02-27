@@ -10,11 +10,18 @@
 /// (event loop) along with any global app state.
 const App = @This();
 
+const gtk = @import("gtk");
+const gio = @import("gio");
+const glib = @import("glib");
+const gobject = @import("gobject");
+const adw = @import("adw");
+
 const std = @import("std");
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const builtin = @import("builtin");
 const build_config = @import("../../build_config.zig");
+const xev = @import("../../global.zig").xev;
 const build_options = @import("build_options");
 const apprt = @import("../../apprt.zig");
 const configpkg = @import("../../config.zig");
@@ -25,7 +32,6 @@ const Config = configpkg.Config;
 const CoreApp = @import("../../App.zig");
 const CoreSurface = @import("../../Surface.zig");
 
-const adwaita = @import("adwaita.zig");
 const cgroup = @import("cgroup.zig");
 const Surface = @import("Surface.zig");
 const Window = @import("Window.zig");
@@ -58,12 +64,6 @@ single_instance: bool,
 /// The "none" cursor. We use one that is shared across the entire app.
 cursor_none: ?*c.GdkCursor,
 
-/// The shared application menu.
-menu: ?*c.GMenu = null,
-
-/// The shared context menu.
-context_menu: ?*c.GMenu = null,
-
 /// The configuration errors window, if it is currently open.
 config_errors_window: ?*ConfigErrorsWindow = null,
 
@@ -72,11 +72,6 @@ clipboard_confirmation_window: ?*ClipboardConfirmationWindow = null,
 
 /// This is set to false when the main loop should exit.
 running: bool = true,
-
-/// If we should retry querying D-Bus for the color scheme with the deprecated
-/// Read method, instead of the recommended ReadOne method. This is kind of
-/// nasty to have as struct state but its just a byte...
-dbus_color_scheme_retry: bool = true,
 
 /// The base path of the transient cgroup used to put all surfaces
 /// into their own cgroup. This is only set if cgroups are enabled
@@ -109,6 +104,14 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         c.gtk_get_micro_version(),
     });
 
+    // log the adwaita version
+    log.info("libadwaita version build={s} runtime={}.{}.{}", .{
+        c.ADW_VERSION_S,
+        c.adw_get_major_version(),
+        c.adw_get_minor_version(),
+        c.adw_get_micro_version(),
+    });
+
     // Load our configuration
     var config = try Config.load(core_app.alloc);
     errdefer config.deinit();
@@ -127,6 +130,27 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         if (config._diagnostics.containsLocation(.cli)) {
             log.warn("CLI errors detected, exiting", .{});
             std.posix.exit(1);
+        }
+    }
+
+    // Setup our event loop backend
+    if (config.@"async-backend" != .auto) {
+        const result: bool = switch (config.@"async-backend") {
+            .auto => unreachable,
+            .epoll => xev.prefer(.epoll),
+            .io_uring => xev.prefer(.io_uring),
+        };
+
+        if (result) {
+            log.info(
+                "libxev manual backend={s}",
+                .{@tagName(xev.backend)},
+            );
+        } else {
+            log.warn(
+                "libxev manual backend failed, using default={s}",
+                .{@tagName(xev.backend)},
+            );
         }
     }
 
@@ -236,23 +260,14 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         }
     }
 
-    c.gtk_init();
+    c.adw_init();
+
     const display: *c.GdkDisplay = c.gdk_display_get_default() orelse {
         // I'm unsure of any scenario where this happens. Because we don't
         // want to litter null checks everywhere, we just exit here.
         log.warn("gdk display is null, exiting", .{});
         std.posix.exit(1);
     };
-
-    // If we're using libadwaita, log the version
-    if (adwaita.enabled(&config)) {
-        log.info("libadwaita version build={s} runtime={}.{}.{}", .{
-            c.ADW_VERSION_S,
-            c.adw_get_major_version(),
-            c.adw_get_minor_version(),
-            c.adw_get_micro_version(),
-        });
-    }
 
     // The "none" cursor is used for hiding the cursor
     const cursor_none = c.gdk_cursor_new_from_name("none", null);
@@ -288,103 +303,38 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     };
 
     // Create our GTK Application which encapsulates our process.
-    const app: *c.GtkApplication = app: {
-        log.debug("creating GTK application id={s} single-instance={} adwaita={}", .{
-            app_id,
-            single_instance,
-            adwaita,
-        });
+    log.debug("creating GTK application id={s} single-instance={}", .{
+        app_id,
+        single_instance,
+    });
 
-        // If not libadwaita, create a standard GTK application.
-        if ((comptime !adwaita.versionAtLeast(0, 0, 0)) or
-            !adwaita.enabled(&config))
-        {
-            {
-                const provider = c.gtk_css_provider_new();
-                defer c.g_object_unref(provider);
-                switch (config.@"window-theme") {
-                    .system, .light => {},
-                    .dark => {
-                        const settings = c.gtk_settings_get_default();
-                        c.g_object_set(@ptrCast(@alignCast(settings)), "gtk-application-prefer-dark-theme", true, @as([*c]const u8, null));
+    // Using an AdwApplication lets us use Adwaita widgets and access things
+    // such as the color scheme.
+    const adw_app = @as(?*c.AdwApplication, @ptrCast(c.adw_application_new(
+        app_id.ptr,
+        app_flags,
+    ))) orelse return error.GtkInitFailed;
+    errdefer c.g_object_unref(adw_app);
 
-                        c.gtk_css_provider_load_from_resource(
-                            provider,
-                            "/com/mitchellh/ghostty/style-dark.css",
-                        );
-                        c.gtk_style_context_add_provider_for_display(
-                            display,
-                            @ptrCast(provider),
-                            c.GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 2,
-                        );
-                    },
-                    .auto, .ghostty => {
-                        const lum = config.background.toTerminalRGB().perceivedLuminance();
-                        if (lum <= 0.5) {
-                            const settings = c.gtk_settings_get_default();
-                            c.g_object_set(@ptrCast(@alignCast(settings)), "gtk-application-prefer-dark-theme", true, @as([*c]const u8, null));
-
-                            c.gtk_css_provider_load_from_resource(
-                                provider,
-                                "/com/mitchellh/ghostty/style-dark.css",
-                            );
-                            c.gtk_style_context_add_provider_for_display(
-                                display,
-                                @ptrCast(provider),
-                                c.GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 2,
-                            );
-                        }
-                    },
-                }
-            }
-
-            {
-                const provider = c.gtk_css_provider_new();
-                defer c.g_object_unref(provider);
-
-                c.gtk_css_provider_load_from_resource(provider, "/com/mitchellh/ghostty/style.css");
-                c.gtk_style_context_add_provider_for_display(
-                    display,
-                    @ptrCast(provider),
-                    c.GTK_STYLE_PROVIDER_PRIORITY_APPLICATION + 1,
-                );
-            }
-
-            break :app @as(?*c.GtkApplication, @ptrCast(c.gtk_application_new(
-                app_id.ptr,
-                app_flags,
-            ))) orelse return error.GtkInitFailed;
-        }
-
-        // Use libadwaita if requested. Using an AdwApplication lets us use
-        // Adwaita widgets and access things such as the color scheme.
-        const adw_app = @as(?*c.AdwApplication, @ptrCast(c.adw_application_new(
-            app_id.ptr,
-            app_flags,
-        ))) orelse return error.GtkInitFailed;
-
-        const style_manager = c.adw_application_get_style_manager(adw_app);
-        c.adw_style_manager_set_color_scheme(
-            style_manager,
-            switch (config.@"window-theme") {
-                .auto, .ghostty => auto: {
-                    const lum = config.background.toTerminalRGB().perceivedLuminance();
-                    break :auto if (lum > 0.5)
-                        c.ADW_COLOR_SCHEME_PREFER_LIGHT
-                    else
-                        c.ADW_COLOR_SCHEME_PREFER_DARK;
-                },
-
-                .system => c.ADW_COLOR_SCHEME_PREFER_LIGHT,
-                .dark => c.ADW_COLOR_SCHEME_FORCE_DARK,
-                .light => c.ADW_COLOR_SCHEME_FORCE_LIGHT,
+    const style_manager = c.adw_application_get_style_manager(adw_app);
+    c.adw_style_manager_set_color_scheme(
+        style_manager,
+        switch (config.@"window-theme") {
+            .auto, .ghostty => auto: {
+                const lum = config.background.toTerminalRGB().perceivedLuminance();
+                break :auto if (lum > 0.5)
+                    c.ADW_COLOR_SCHEME_PREFER_LIGHT
+                else
+                    c.ADW_COLOR_SCHEME_PREFER_DARK;
             },
-        );
+            .system => c.ADW_COLOR_SCHEME_PREFER_LIGHT,
+            .dark => c.ADW_COLOR_SCHEME_FORCE_DARK,
+            .light => c.ADW_COLOR_SCHEME_FORCE_LIGHT,
+        },
+    );
 
-        break :app @ptrCast(adw_app);
-    };
-    errdefer c.g_object_unref(app);
-    const gapp = @as(*c.GApplication, @ptrCast(app));
+    const app: *c.GtkApplication = @ptrCast(adw_app);
+    const gapp: *c.GApplication = @ptrCast(app);
 
     // force the resource path to a known value so that it doesn't depend on
     // the app id and load in compiled resources
@@ -493,8 +443,6 @@ pub fn terminate(self: *App) void {
     c.g_object_unref(self.app);
 
     if (self.cursor_none) |cursor| c.g_object_unref(cursor);
-    if (self.menu) |menu| c.g_object_unref(menu);
-    if (self.context_menu) |context_menu| c.g_object_unref(context_menu);
     if (self.transient_cgroup_base) |path| self.core_app.alloc.free(path);
 
     for (self.custom_css_providers.items) |provider| {
@@ -507,13 +455,14 @@ pub fn terminate(self: *App) void {
     self.config.deinit();
 }
 
-/// Perform a given action.
+/// Perform a given action. Returns `true` if the action was able to be
+/// performed, `false` otherwise.
 pub fn performAction(
     self: *App,
     target: apprt.Target,
     comptime action: apprt.Action.Key,
     value: apprt.Action.Value(action),
-) !void {
+) !bool {
     switch (action) {
         .quit => self.quit(),
         .new_window => _ = try self.newWindow(switch (target) {
@@ -522,15 +471,14 @@ pub fn performAction(
         }),
         .toggle_maximize => self.toggleMaximize(target),
         .toggle_fullscreen => self.toggleFullscreen(target, value),
-
         .new_tab => try self.newTab(target),
         .close_tab => try self.closeTab(target),
-        .goto_tab => self.gotoTab(target, value),
+        .goto_tab => return self.gotoTab(target, value),
         .move_tab => self.moveTab(target, value),
         .new_split => try self.newSplit(target, value),
         .resize_split => self.resizeSplit(target, value),
         .equalize_splits => self.equalizeSplits(target),
-        .goto_split => self.gotoSplit(target, value),
+        .goto_split => return self.gotoSplit(target, value),
         .open_config => try configpkg.edit.open(self.core_app.alloc),
         .config_change => self.configChange(target, value.config),
         .reload_config => try self.reloadConfig(target, value),
@@ -548,6 +496,7 @@ pub fn performAction(
         .toggle_split_zoom => self.toggleSplitZoom(target),
         .toggle_window_decorations => self.toggleWindowDecorations(target),
         .quit_timer => self.quitTimer(value),
+        .prompt_title => try self.promptTitle(target),
 
         // Unimplemented
         .close_all_windows,
@@ -559,8 +508,15 @@ pub fn performAction(
         .render_inspector,
         .renderer_health,
         .color_change,
-        => log.warn("unimplemented action={}", .{action}),
+        => {
+            log.warn("unimplemented action={}", .{action});
+            return false;
+        },
     }
+
+    // We can assume it was handled because all unknown/unimplemented actions
+    // are caught above.
+    return true;
 }
 
 fn newTab(_: *App, target: apprt.Target) !void {
@@ -597,24 +553,24 @@ fn closeTab(_: *App, target: apprt.Target) !void {
     }
 }
 
-fn gotoTab(_: *App, target: apprt.Target, tab: apprt.action.GotoTab) void {
+fn gotoTab(_: *App, target: apprt.Target, tab: apprt.action.GotoTab) bool {
     switch (target) {
-        .app => {},
+        .app => return false,
         .surface => |v| {
             const window = v.rt_surface.container.window() orelse {
                 log.info(
                     "gotoTab invalid for container={s}",
                     .{@tagName(v.rt_surface.container)},
                 );
-                return;
+                return false;
             };
 
-            switch (tab) {
+            return switch (tab) {
                 .previous => window.gotoPreviousTab(v.rt_surface),
                 .next => window.gotoNextTab(v.rt_surface),
                 .last => window.gotoLastTab(),
                 else => window.gotoTab(@intCast(@intFromEnum(tab))),
-            }
+            };
         },
     }
 }
@@ -668,18 +624,22 @@ fn gotoSplit(
     _: *const App,
     target: apprt.Target,
     direction: apprt.action.GotoSplit,
-) void {
+) bool {
     switch (target) {
-        .app => {},
+        .app => return false,
         .surface => |v| {
-            const s = v.rt_surface.container.split() orelse return;
+            const s = v.rt_surface.container.split() orelse return false;
             const map = s.directionMap(switch (v.rt_surface.container) {
                 .split_tl => .top_left,
                 .split_br => .bottom_right,
                 .none, .tab_ => unreachable,
             });
-            const surface_ = map.get(direction) orelse return;
-            if (surface_) |surface| surface.grabFocus();
+            const surface_ = map.get(direction) orelse return false;
+            if (surface_) |surface| {
+                surface.grabFocus();
+                return true;
+            }
+            return false;
         },
     }
 }
@@ -811,6 +771,15 @@ fn quitTimer(self: *App, mode: apprt.action.QuitTimer) void {
     }
 }
 
+fn promptTitle(_: *App, target: apprt.Target) !void {
+    switch (target) {
+        .app => {},
+        .surface => |v| {
+            try v.rt_surface.promptTitle();
+        },
+    }
+}
+
 fn setTitle(
     _: *App,
     target: apprt.Target,
@@ -818,7 +787,7 @@ fn setTitle(
 ) !void {
     switch (target) {
         .app => {},
-        .surface => |v| try v.rt_surface.setTitle(title.title),
+        .surface => |v| try v.rt_surface.setTitle(title.title, .terminal),
     }
 }
 
@@ -946,6 +915,9 @@ fn configChange(
 ) void {
     switch (target) {
         .surface => |surface| surface: {
+            surface.rt_surface.updateConfig(new_config) catch |err| {
+                log.err("unable to update surface config: {}", .{err});
+            };
             const window = surface.rt_surface.container.window() orelse break :surface;
             window.updateConfig(new_config) catch |err| {
                 log.warn("error updating config for window err={}", .{err});
@@ -967,11 +939,9 @@ fn configChange(
 
             // App changes needs to show a toast that our configuration
             // has reloaded.
-            if (adwaita.enabled(&self.config)) {
-                if (self.core_app.focusedSurface()) |core_surface| {
-                    const surface = core_surface.rt_surface;
-                    if (surface.container.window()) |window| window.onConfigReloaded();
-                }
+            if (self.core_app.focusedSurface()) |core_surface| {
+                const surface = core_surface.rt_surface;
+                if (surface.container.window()) |window| window.onConfigReloaded();
             }
         },
     }
@@ -1046,17 +1016,20 @@ fn syncActionAccelerators(self: *App) !void {
     try self.syncActionAccelerator("app.quit", .{ .quit = {} });
     try self.syncActionAccelerator("app.open-config", .{ .open_config = {} });
     try self.syncActionAccelerator("app.reload-config", .{ .reload_config = {} });
-    try self.syncActionAccelerator("win.toggle_inspector", .{ .inspector = .toggle });
-    try self.syncActionAccelerator("win.close", .{ .close_surface = {} });
-    try self.syncActionAccelerator("win.new_window", .{ .new_window = {} });
-    try self.syncActionAccelerator("win.new_tab", .{ .new_tab = {} });
-    try self.syncActionAccelerator("win.split_right", .{ .new_split = .right });
-    try self.syncActionAccelerator("win.split_down", .{ .new_split = .down });
-    try self.syncActionAccelerator("win.split_left", .{ .new_split = .left });
-    try self.syncActionAccelerator("win.split_up", .{ .new_split = .up });
+    try self.syncActionAccelerator("win.toggle-inspector", .{ .inspector = .toggle });
+    try self.syncActionAccelerator("win.close", .{ .close_window = {} });
+    try self.syncActionAccelerator("win.new-window", .{ .new_window = {} });
+    try self.syncActionAccelerator("win.new-tab", .{ .new_tab = {} });
+    try self.syncActionAccelerator("win.close-tab", .{ .close_tab = {} });
+    try self.syncActionAccelerator("win.split-right", .{ .new_split = .right });
+    try self.syncActionAccelerator("win.split-down", .{ .new_split = .down });
+    try self.syncActionAccelerator("win.split-left", .{ .new_split = .left });
+    try self.syncActionAccelerator("win.split-up", .{ .new_split = .up });
     try self.syncActionAccelerator("win.copy", .{ .copy_to_clipboard = {} });
     try self.syncActionAccelerator("win.paste", .{ .paste_from_clipboard = {} });
     try self.syncActionAccelerator("win.reset", .{ .reset = {} });
+    try self.syncActionAccelerator("win.clear", .{ .clear_screen = {} });
+    try self.syncActionAccelerator("win.prompt-title", .{ .prompt_surface_title = {} });
 }
 
 fn syncActionAccelerator(
@@ -1284,14 +1257,25 @@ pub fn run(self: *App) !void {
         self.transient_cgroup_base = path;
     } else log.debug("cgroup isolation disabled config={}", .{self.config.@"linux-cgroup"});
 
-    // Setup our D-Bus connection for listening to settings changes,
-    // and asynchronously request the initial color scheme
-    self.initDbus();
+    // Setup color scheme notifications
+    const adw_app: *adw.Application = @ptrCast(@alignCast(self.app));
+    const style_manager: *adw.StyleManager = adw_app.getStyleManager();
+    _ = gobject.Object.signals.notify.connect(
+        style_manager,
+        *App,
+        adwNotifyDark,
+        self,
+        .{
+            .detail = "dark",
+        },
+    );
 
-    // Setup our menu items
+    // Make an initial request to set up the color scheme
+    const light = style_manager.getDark() == 0;
+    self.colorSchemeEvent(if (light) .light else .dark);
+
+    // Setup our actions
     self.initActions();
-    self.initMenu();
-    self.initContextMenu();
 
     // On startup, we want to check for configuration errors right away
     // so we can show our error window. We also need to setup other initial
@@ -1320,42 +1304,6 @@ pub fn run(self: *App) !void {
 
         if (must_quit) self.quit();
     }
-}
-
-fn initDbus(self: *App) void {
-    const dbus = c.g_application_get_dbus_connection(@ptrCast(self.app)) orelse {
-        log.warn("unable to get dbus connection, not setting up events", .{});
-        return;
-    };
-
-    _ = c.g_dbus_connection_signal_subscribe(
-        dbus,
-        null,
-        "org.freedesktop.portal.Settings",
-        "SettingChanged",
-        "/org/freedesktop/portal/desktop",
-        "org.freedesktop.appearance",
-        c.G_DBUS_SIGNAL_FLAGS_MATCH_ARG0_NAMESPACE,
-        &gtkNotifyColorScheme,
-        self,
-        null,
-    );
-
-    // Request the initial color scheme asynchronously.
-    c.g_dbus_connection_call(
-        dbus,
-        "org.freedesktop.portal.Desktop",
-        "/org/freedesktop/portal/desktop",
-        "org.freedesktop.portal.Settings",
-        "ReadOne",
-        c.g_variant_new("(ss)", "org.freedesktop.appearance", "color-scheme"),
-        c.G_VARIANT_TYPE("(v)"),
-        c.G_DBUS_CALL_FLAGS_NONE,
-        -1,
-        null,
-        dbusColorSchemeCallback,
-        self,
-    );
 }
 
 // This timeout function is started when no surfaces are open. It can be
@@ -1593,101 +1541,15 @@ fn gtkWindowIsActive(
     core_app.focusEvent(false);
 }
 
-fn dbusColorSchemeCallback(
-    source_object: [*c]c.GObject,
-    res: ?*c.GAsyncResult,
-    ud: ?*anyopaque,
+fn adwNotifyDark(
+    style_manager: *adw.StyleManager,
+    _: *gobject.ParamSpec,
+    self: *App,
 ) callconv(.C) void {
-    const self: *App = @ptrCast(@alignCast(ud.?));
-    const dbus: *c.GDBusConnection = @ptrCast(source_object);
-
-    var err: ?*c.GError = null;
-    defer if (err) |e| c.g_error_free(e);
-
-    if (c.g_dbus_connection_call_finish(dbus, res, &err)) |value| {
-        if (c.g_variant_is_of_type(value, c.G_VARIANT_TYPE("(v)")) == 1) {
-            var inner: ?*c.GVariant = null;
-            c.g_variant_get(value, "(v)", &inner);
-            defer c.g_variant_unref(inner);
-            if (c.g_variant_is_of_type(inner, c.G_VARIANT_TYPE("u")) == 1) {
-                self.colorSchemeEvent(if (c.g_variant_get_uint32(inner) == 1)
-                    .dark
-                else
-                    .light);
-                return;
-            }
-        }
-    } else if (err) |e| {
-        // If ReadOne is not yet implemented, fall back to deprecated "Read" method
-        // Error code: GDBus.Error:org.freedesktop.DBus.Error.UnknownMethod: No such method “ReadOne”
-        if (self.dbus_color_scheme_retry and e.code == 19) {
-            self.dbus_color_scheme_retry = false;
-            c.g_dbus_connection_call(
-                dbus,
-                "org.freedesktop.portal.Desktop",
-                "/org/freedesktop/portal/desktop",
-                "org.freedesktop.portal.Settings",
-                "Read",
-                c.g_variant_new("(ss)", "org.freedesktop.appearance", "color-scheme"),
-                c.G_VARIANT_TYPE("(v)"),
-                c.G_DBUS_CALL_FLAGS_NONE,
-                -1,
-                null,
-                dbusColorSchemeCallback,
-                self,
-            );
-            return;
-        }
-
-        // Otherwise, log the error and return .light
-        log.warn("unable to get current color scheme: {s}", .{e.message});
-    }
-
-    // Fall back
-    self.colorSchemeEvent(.light);
-}
-
-/// This will be called by D-Bus when the style changes between light & dark.
-fn gtkNotifyColorScheme(
-    _: ?*c.GDBusConnection,
-    _: [*c]const u8,
-    _: [*c]const u8,
-    _: [*c]const u8,
-    _: [*c]const u8,
-    parameters: ?*c.GVariant,
-    user_data: ?*anyopaque,
-) callconv(.C) void {
-    const self: *App = @ptrCast(@alignCast(user_data orelse {
-        log.err("style change notification: userdata is null", .{});
-        return;
-    }));
-
-    if (c.g_variant_is_of_type(parameters, c.G_VARIANT_TYPE("(ssv)")) != 1) {
-        log.err("unexpected parameter type: {s}", .{c.g_variant_get_type_string(parameters)});
-        return;
-    }
-
-    var namespace: [*c]u8 = undefined;
-    var setting: [*c]u8 = undefined;
-    var value: *c.GVariant = undefined;
-    c.g_variant_get(parameters, "(ssv)", &namespace, &setting, &value);
-    defer c.g_free(namespace);
-    defer c.g_free(setting);
-    defer c.g_variant_unref(value);
-
-    // ignore any setting changes that we aren't interested in
-    if (!std.mem.eql(u8, "org.freedesktop.appearance", std.mem.span(namespace))) return;
-    if (!std.mem.eql(u8, "color-scheme", std.mem.span(setting))) return;
-
-    if (c.g_variant_is_of_type(value, c.G_VARIANT_TYPE("u")) != 1) {
-        log.err("unexpected value type: {s}", .{c.g_variant_get_type_string(value)});
-        return;
-    }
-
-    const color_scheme: apprt.ColorScheme = if (c.g_variant_get_uint32(value) == 1)
-        .dark
+    const color_scheme: apprt.ColorScheme = if (style_manager.getDark() == 0)
+        .light
     else
-        .light;
+        .dark;
 
     self.colorSchemeEvent(color_scheme);
 }
@@ -1807,87 +1669,6 @@ fn initActions(self: *App) void {
         );
         c.g_action_map_add_action(@ptrCast(self.app), @ptrCast(action));
     }
-}
-
-/// Initializes and populates the provided GMenu with sections and actions.
-/// This function is used to set up the application's menu structure, either for
-/// the main menu button or as a context menu when window decorations are disabled.
-fn initMenuContent(menu: *c.GMenu) void {
-    {
-        const section = c.g_menu_new();
-        defer c.g_object_unref(section);
-        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
-        c.g_menu_append(section, "New Window", "win.new_window");
-        c.g_menu_append(section, "New Tab", "win.new_tab");
-        c.g_menu_append(section, "Close Tab", "win.close_tab");
-        c.g_menu_append(section, "Split Right", "win.split_right");
-        c.g_menu_append(section, "Split Down", "win.split_down");
-        c.g_menu_append(section, "Close Window", "win.close");
-    }
-
-    {
-        const section = c.g_menu_new();
-        defer c.g_object_unref(section);
-        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
-        c.g_menu_append(section, "Terminal Inspector", "win.toggle_inspector");
-        c.g_menu_append(section, "Open Configuration", "app.open-config");
-        c.g_menu_append(section, "Reload Configuration", "app.reload-config");
-        c.g_menu_append(section, "About Ghostty", "win.about");
-    }
-}
-
-/// This sets the self.menu property to the application menu that can be
-/// shared by all application windows.
-fn initMenu(self: *App) void {
-    const menu = c.g_menu_new();
-    errdefer c.g_object_unref(menu);
-    initMenuContent(@ptrCast(menu));
-    self.menu = menu;
-}
-
-fn initContextMenu(self: *App) void {
-    const menu = c.g_menu_new();
-    errdefer c.g_object_unref(menu);
-
-    {
-        const section = c.g_menu_new();
-        defer c.g_object_unref(section);
-        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
-        c.g_menu_append(section, "Copy", "win.copy");
-        c.g_menu_append(section, "Paste", "win.paste");
-    }
-
-    {
-        const section = c.g_menu_new();
-        defer c.g_object_unref(section);
-        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
-        c.g_menu_append(section, "Split Right", "win.split_right");
-        c.g_menu_append(section, "Split Down", "win.split_down");
-    }
-
-    {
-        const section = c.g_menu_new();
-        defer c.g_object_unref(section);
-        c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
-        c.g_menu_append(section, "Reset", "win.reset");
-        c.g_menu_append(section, "Terminal Inspector", "win.toggle_inspector");
-    }
-
-    const section = c.g_menu_new();
-    defer c.g_object_unref(section);
-    const submenu = c.g_menu_new();
-    defer c.g_object_unref(submenu);
-
-    initMenuContent(@ptrCast(submenu));
-    c.g_menu_append_submenu(section, "Menu", @ptrCast(@alignCast(submenu)));
-    c.g_menu_append_section(menu, null, @ptrCast(@alignCast(section)));
-
-    self.context_menu = menu;
-}
-
-pub fn refreshContextMenu(_: *App, window: ?*c.GtkWindow, has_selection: bool) void {
-    const action: ?*c.GSimpleAction = @ptrCast(c.g_action_map_lookup_action(@ptrCast(window), "copy"));
-    c.g_simple_action_set_enabled(action, if (has_selection) 1 else 0);
 }
 
 fn isValidAppId(app_id: [:0]const u8) bool {

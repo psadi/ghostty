@@ -1,0 +1,31 @@
+using Gtk 4.0;
+using Adw 1;
+translation-domain "com.mitchellh.ghostty";
+
+Adw.AlertDialog clipboard_confirmation_window {
+  heading: _("Authorize Clipboard Access");
+  body: _("An application is attempting to write to the clipboard. The current clipboard contents are shown below.");
+
+  responses [
+    cancel: _("Deny") suggested,
+    ok: _("Allow") destructive
+  ]
+
+  default-response: "cancel";
+  close-response: "cancel";
+
+  extra-child: ScrolledWindow {
+    width-request: 500;
+    height-request: 250;
+
+    TextView text_view {
+      cursor-visible: false;
+      editable: false;
+      monospace: true;
+      top-margin: 8;
+      left-margin: 8;
+      bottom-margin: 8;
+      right-margin: 8;
+    }
+  };
+}

@@ -5,13 +5,16 @@ const Split = @This();
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
+
+const gobject = @import("gobject");
+const gtk = @import("gtk");
+
 const apprt = @import("../../apprt.zig");
 const font = @import("../../font/main.zig");
 const CoreSurface = @import("../../Surface.zig");
 
 const Surface = @import("Surface.zig");
 const Tab = @import("Tab.zig");
-const c = @import("c.zig").c;
 
 const log = std.log.scoped(.gtk);
 
@@ -36,7 +39,7 @@ pub const Orientation = enum {
 };
 
 /// Our actual GtkPaned widget
-paned: *c.GtkPaned,
+paned: *gtk.Paned,
 
 /// The container for this split panel.
 container: Surface.Container,
@@ -101,15 +104,15 @@ pub fn init(
     sibling.setSplitZoom(false);
 
     // Create the actual GTKPaned, attach the proper children.
-    const orientation: c_uint = switch (direction) {
-        .right, .left => c.GTK_ORIENTATION_HORIZONTAL,
-        .down, .up => c.GTK_ORIENTATION_VERTICAL,
+    const orientation: gtk.Orientation = switch (direction) {
+        .right, .left => .horizontal,
+        .down, .up => .vertical,
     };
-    const paned = c.gtk_paned_new(orientation);
-    errdefer c.g_object_unref(paned);
+    const paned = gtk.Paned.new(orientation);
+    errdefer paned.unref();
 
     // Keep a long-lived reference, which we unref in destroy.
-    _ = c.g_object_ref(paned);
+    paned.ref();
 
     // Update all of our containers to point to the right place.
     // The split has to point to where the sibling pointed to because
@@ -131,20 +134,18 @@ pub fn init(
     };
 
     self.* = .{
-        .paned = @ptrCast(paned),
+        .paned = paned,
         .container = container,
         .top_left = .{ .surface = tl },
         .bottom_right = .{ .surface = br },
         .orientation = Orientation.fromDirection(direction),
     };
 
-    // Replace the previous containers element with our split.
-    // This allows a non-split to become a split, a split to
-    // become a nested split, etc.
+    // Replace the previous containers element with our split. This allows a
+    // non-split to become a split, a split to become a nested split, etc.
     container.replace(.{ .split = self });
 
-    // Update our children so that our GL area is properly
-    // added to the paned.
+    // Update our children so that our GL area is properly added to the paned.
     self.updateChildren();
 
     // The new surface should always grab focus
@@ -157,7 +158,7 @@ pub fn destroy(self: *Split, alloc: Allocator) void {
 
     // Clean up our GTK reference. This will trigger all the destroy callbacks
     // that are necessary for the surfaces to clean up.
-    c.g_object_unref(self.paned);
+    self.paned.unref();
 
     alloc.destroy(self);
 }
@@ -180,8 +181,8 @@ fn removeChild(
     const window = self.container.window() orelse return;
     const alloc = window.app.core_app.alloc;
 
-    // Remove our children since we are going to no longer be
-    // a split anyways. This prevents widgets with multiple parents.
+    // Remove our children since we are going to no longer be a split anyways.
+    // This prevents widgets with multiple parents.
     self.removeChildren();
 
     // Our container must become whatever our top left is
@@ -203,7 +204,7 @@ pub fn moveDivider(
 ) void {
     const min_pos = 10;
 
-    const pos = c.gtk_paned_get_position(self.paned);
+    const pos = self.paned.getPosition();
     const new = switch (direction) {
         .up, .left => @max(pos - amount, min_pos),
         .down, .right => new_pos: {
@@ -212,7 +213,7 @@ pub fn moveDivider(
         },
     };
 
-    c.gtk_paned_set_position(self.paned, new);
+    self.paned.setPosition(new);
 }
 
 /// Equalize the splits in this split panel. Each split is equalized based on
@@ -231,7 +232,7 @@ pub fn equalize(self: *Split) f64 {
     const ratio = top_left_weight / weight;
 
     // Convert split ratio into new position for divider
-    c.gtk_paned_set_position(self.paned, @intFromFloat(self.maxPosition() * ratio));
+    self.paned.setPosition(@intFromFloat(self.maxPosition() * ratio));
 
     return weight;
 }
@@ -239,17 +240,16 @@ pub fn equalize(self: *Split) f64 {
 // maxPosition returns the maximum position of the GtkPaned, which is the
 // "max-position" attribute.
 fn maxPosition(self: *Split) f64 {
-    var value: c.GValue = std.mem.zeroes(c.GValue);
-    defer c.g_value_unset(&value);
+    var value: gobject.Value = std.mem.zeroes(gobject.Value);
+    defer value.unset();
 
-    _ = c.g_value_init(&value, c.G_TYPE_INT);
-    c.g_object_get_property(
-        @ptrCast(@alignCast(self.paned)),
+    _ = value.init(gobject.ext.types.int);
+    self.paned.as(gobject.Object).getProperty(
         "max-position",
         &value,
     );
 
-    return @floatFromInt(c.g_value_get_int(&value));
+    return @floatFromInt(value.getInt());
 }
 
 // This replaces the element at the given pointer with a new element.
@@ -267,8 +267,8 @@ pub fn replace(
 
     // Update our paned children. This will reset the divider
     // position but we want to keep it in place so save and restore it.
-    const pos = c.gtk_paned_get_position(self.paned);
-    defer c.gtk_paned_set_position(self.paned, pos);
+    const pos = self.paned.getPosition();
+    defer self.paned.setPosition(pos);
     self.updateChildren();
 }
 
@@ -287,14 +287,8 @@ pub fn updateChildren(self: *const Split) void {
     self.removeChildren();
 
     // Set our current children
-    c.gtk_paned_set_start_child(
-        @ptrCast(self.paned),
-        self.top_left.widget(),
-    );
-    c.gtk_paned_set_end_child(
-        @ptrCast(self.paned),
-        self.bottom_right.widget(),
-    );
+    self.paned.setStartChild(@ptrCast(@alignCast(self.top_left.widget())));
+    self.paned.setEndChild(@ptrCast(@alignCast(self.bottom_right.widget())));
 }
 
 /// A mapping of direction to the element (if any) in that direction.
@@ -313,11 +307,7 @@ pub fn directionMap(self: *const Split, from: Side) DirectionMap {
     if (self.directionPrevious(from)) |prev| {
         result.put(.previous, prev.surface);
         if (!prev.wrapped) {
-            // This behavior matches the behavior of macOS at the time of writing
-            // this. There is an open issue (#524) to make this depend on the
-            // actual physical location of the current split.
             result.put(.up, prev.surface);
-            result.put(.left, prev.surface);
         }
     }
 
@@ -325,11 +315,54 @@ pub fn directionMap(self: *const Split, from: Side) DirectionMap {
         result.put(.next, next.surface);
         if (!next.wrapped) {
             result.put(.down, next.surface);
-            result.put(.right, next.surface);
         }
     }
 
+    if (self.directionLeft(from)) |left| {
+        result.put(.left, left);
+    }
+
+    if (self.directionRight(from)) |right| {
+        result.put(.right, right);
+    }
+
     return result;
+}
+
+fn directionLeft(self: *const Split, from: Side) ?*Surface {
+    switch (from) {
+        .bottom_right => {
+            switch (self.orientation) {
+                .horizontal => return self.top_left.deepestSurface(.bottom_right),
+                .vertical => return directionLeft(
+                    self.container.split() orelse return null,
+                    .bottom_right,
+                ),
+            }
+        },
+        .top_left => return directionLeft(
+            self.container.split() orelse return null,
+            .bottom_right,
+        ),
+    }
+}
+
+fn directionRight(self: *const Split, from: Side) ?*Surface {
+    switch (from) {
+        .top_left => {
+            switch (self.orientation) {
+                .horizontal => return self.bottom_right.deepestSurface(.top_left),
+                .vertical => return directionRight(
+                    self.container.split() orelse return null,
+                    .top_left,
+                ),
+            }
+        },
+        .bottom_right => return directionRight(
+            self.container.split() orelse return null,
+            .top_left,
+        ),
+    }
 }
 
 fn directionPrevious(self: *const Split, from: Side) ?struct {
@@ -395,11 +428,11 @@ fn directionNext(self: *const Split, from: Side) ?struct {
 }
 
 pub fn detachTopLeft(self: *const Split) void {
-    c.gtk_paned_set_start_child(self.paned, null);
+    self.paned.setStartChild(null);
 }
 
 pub fn detachBottomRight(self: *const Split) void {
-    c.gtk_paned_set_end_child(self.paned, null);
+    self.paned.setEndChild(null);
 }
 
 fn removeChildren(self: *const Split) void {

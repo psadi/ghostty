@@ -81,6 +81,9 @@
 # - @ghostty-org/macos - The Ghostty macOS app and any macOS-specific
 #   features, configurations, etc.
 #
+# - @ghostty-org/packaging/snap - Ghostty snap packaging
+#   (https://snapcraft.io/ghostty)
+#
 # - @ghostty-org/renderer - Ghostty rendering subsystem, including the
 #   rendering abstractions as well as specific renderers like OpenGL
 #   and Metal.
@@ -147,3 +150,6 @@
 /src/unicode/ @ghostty-org/terminal
 /src/Surface.zig @ghostty-org/terminal
 /src/surface_mouse.zig @ghostty-org/terminal
+
+# Packaging - Snap
+/snap/ @ghostty-org/snap

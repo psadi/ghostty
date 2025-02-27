@@ -53,29 +53,57 @@ const icons = [_]struct {
     },
 };
 
-pub const gresource_xml = comptimeGenerateGResourceXML();
+pub const VersionedBuilderXML = struct {
+    major: u16,
+    minor: u16,
+    name: []const u8,
+};
 
-fn comptimeGenerateGResourceXML() []const u8 {
-    comptime {
-        @setEvalBranchQuota(13000);
-        var counter = std.io.countingWriter(std.io.null_writer);
-        try writeGResourceXML(&counter.writer());
+pub const ui_files = [_]VersionedBuilderXML{
+    .{ .major = 1, .minor = 2, .name = "ccw-osc-52-read" },
+    .{ .major = 1, .minor = 2, .name = "ccw-osc-52-write" },
+    .{ .major = 1, .minor = 2, .name = "ccw-paste" },
+};
 
-        var buf: [counter.bytes_written]u8 = undefined;
-        var stream = std.io.fixedBufferStream(&buf);
-        try writeGResourceXML(stream.writer());
-        const final = buf;
-        return final[0..stream.getWritten().len];
+pub const VersionedBlueprint = struct {
+    major: u16,
+    minor: u16,
+    name: []const u8,
+};
+
+pub const blueprint_files = [_]VersionedBlueprint{
+    .{ .major = 1, .minor = 5, .name = "prompt-title-dialog" },
+    .{ .major = 1, .minor = 0, .name = "menu-surface-context_menu" },
+    .{ .major = 1, .minor = 0, .name = "menu-window-titlebar_menu" },
+    .{ .major = 1, .minor = 5, .name = "ccw-osc-52-read" },
+    .{ .major = 1, .minor = 5, .name = "ccw-osc-52-write" },
+    .{ .major = 1, .minor = 5, .name = "ccw-paste" },
+};
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const alloc = gpa.allocator();
+
+    var extra_ui_files = std.ArrayList([]const u8).init(alloc);
+    defer {
+        for (extra_ui_files.items) |item| alloc.free(item);
+        extra_ui_files.deinit();
     }
-}
 
-fn writeGResourceXML(writer: anytype) !void {
+    var it = try std.process.argsWithAllocator(alloc);
+    defer it.deinit();
+
+    while (it.next()) |argument| {
+        if (std.mem.eql(u8, std.fs.path.extension(argument), ".ui")) {
+            try extra_ui_files.append(try alloc.dupe(u8, argument));
+        }
+    }
+
+    const writer = std.io.getStdOut().writer();
+
     try writer.writeAll(
         \\<?xml version="1.0" encoding="UTF-8"?>
         \\<gresources>
-        \\
-    );
-    try writer.writeAll(
         \\  <gresource prefix="/com/mitchellh/ghostty">
         \\
     );
@@ -87,9 +115,6 @@ fn writeGResourceXML(writer: anytype) !void {
     }
     try writer.writeAll(
         \\  </gresource>
-        \\
-    );
-    try writer.writeAll(
         \\  <gresource prefix="/com/mitchellh/ghostty/icons">
         \\
     );
@@ -101,18 +126,60 @@ fn writeGResourceXML(writer: anytype) !void {
     }
     try writer.writeAll(
         \\  </gresource>
+        \\  <gresource prefix="/com/mitchellh/ghostty/ui">
+        \\
+    );
+    for (ui_files) |ui_file| {
+        try writer.print(
+            "    <file compressed=\"true\" preprocess=\"xml-stripblanks\" alias=\"{0d}.{1d}/{2s}.ui\">src/apprt/gtk/ui/{0d}.{1d}/{2s}.ui</file>\n",
+            .{ ui_file.major, ui_file.minor, ui_file.name },
+        );
+    }
+    for (extra_ui_files.items) |ui_file| {
+        const stem = std.fs.path.stem(ui_file);
+        for (blueprint_files) |file| {
+            if (!std.mem.eql(u8, file.name, stem)) continue;
+            try writer.print(
+                "    <file compressed=\"true\" preprocess=\"xml-stripblanks\" alias=\"{d}.{d}/{s}.ui\">{s}</file>\n",
+                .{ file.major, file.minor, file.name, ui_file },
+            );
+            break;
+        } else return error.BlueprintNotFound;
+    }
+    try writer.writeAll(
+        \\  </gresource>
         \\</gresources>
         \\
     );
 }
 
 pub const dependencies = deps: {
-    var deps: [css_files.len + icons.len][]const u8 = undefined;
-    for (css_files, 0..) |css_file, i| {
-        deps[i] = std.fmt.comptimePrint("src/apprt/gtk/{s}", .{css_file});
+    const total = css_files.len + icons.len + ui_files.len + blueprint_files.len;
+    var deps: [total][]const u8 = undefined;
+    var index: usize = 0;
+    for (css_files) |css_file| {
+        deps[index] = std.fmt.comptimePrint("src/apprt/gtk/{s}", .{css_file});
+        index += 1;
     }
-    for (icons, css_files.len..) |icon, i| {
-        deps[i] = std.fmt.comptimePrint("images/icons/icon_{s}.png", .{icon.source});
+    for (icons) |icon| {
+        deps[index] = std.fmt.comptimePrint("images/icons/icon_{s}.png", .{icon.source});
+        index += 1;
+    }
+    for (ui_files) |ui_file| {
+        deps[index] = std.fmt.comptimePrint("src/apprt/gtk/ui/{d}.{d}/{s}.ui", .{
+            ui_file.major,
+            ui_file.minor,
+            ui_file.name,
+        });
+        index += 1;
+    }
+    for (blueprint_files) |blueprint_file| {
+        deps[index] = std.fmt.comptimePrint("src/apprt/gtk/ui/{d}.{d}/{s}.blp", .{
+            blueprint_file.major,
+            blueprint_file.minor,
+            blueprint_file.name,
+        });
+        index += 1;
     }
     break :deps deps;
 };
