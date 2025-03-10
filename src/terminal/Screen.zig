@@ -1373,7 +1373,6 @@ pub fn clearPrompt(self: *Screen) void {
         while (clear_it.next()) |p| {
             const row = p.rowAndCell().row;
             p.node.data.clearCells(row, 0, p.node.data.size.cols);
-            p.node.data.assertIntegrity();
         }
     }
 }

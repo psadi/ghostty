@@ -82,6 +82,7 @@ pub const DerivedConfig = struct {
     gtk_toolbar_style: configpkg.Config.GtkToolbarStyle,
 
     quick_terminal_position: configpkg.Config.QuickTerminalPosition,
+    quick_terminal_size: configpkg.Config.QuickTerminalSize,
     quick_terminal_autohide: bool,
 
     maximize: bool,
@@ -100,6 +101,7 @@ pub const DerivedConfig = struct {
             .gtk_toolbar_style = config.@"gtk-toolbar-style",
 
             .quick_terminal_position = config.@"quick-terminal-position",
+            .quick_terminal_size = config.@"quick-terminal-size",
             .quick_terminal_autohide = config.@"quick-terminal-autohide",
 
             .maximize = config.maximize,

@@ -6,6 +6,7 @@ const build_options = @import("build_options");
 const wayland = @import("wayland");
 const gtk = @import("gtk");
 const gtk4_layer_shell = @import("gtk4-layer-shell");
+const gdk = @import("gdk");
 
 const c = @import("../c.zig").c;
 const Config = @import("../../../config.zig").Config;
@@ -249,6 +250,11 @@ pub const Window = struct {
             break :deco deco;
         };
 
+        if (apprt_window.isQuickTerminal()) {
+            const surface: *gdk.Surface = @ptrCast(gdk_surface);
+            _ = gdk.Surface.signals.enter_monitor.connect(surface, *ApprtWindow, enteredMonitor, apprt_window, .{});
+        }
+
         return .{
             .apprt_window = apprt_window,
             .surface = wl_surface,
@@ -365,11 +371,6 @@ pub const Window = struct {
             gtk4_layer_shell.setAnchor(window, edge, false);
         }
 
-        switch (position) {
-            .top, .bottom, .center => window.setDefaultSize(800, 400),
-            .left, .right => window.setDefaultSize(400, 800),
-        }
-
         if (self.apprt_window.isQuickTerminal()) {
             if (self.slide) |slide| slide.release();
 
@@ -393,5 +394,26 @@ pub const Window = struct {
                 break :slide slide;
             } else null;
         }
+    }
+
+    /// Update the size of the quick terminal based on monitor dimensions.
+    fn enteredMonitor(
+        _: *gdk.Surface,
+        monitor: *gdk.Monitor,
+        apprt_window: *ApprtWindow,
+    ) callconv(.C) void {
+        const window: *gtk.Window = @ptrCast(apprt_window.window);
+        const size = apprt_window.config.quick_terminal_size;
+        const position = apprt_window.config.quick_terminal_position;
+
+        var monitor_size: gdk.Rectangle = undefined;
+        monitor.getGeometry(&monitor_size);
+
+        const dims = size.calculate(position, .{
+            .width = @intCast(monitor_size.f_width),
+            .height = @intCast(monitor_size.f_height),
+        });
+
+        window.setDefaultSize(@intCast(dims.width), @intCast(dims.height));
     }
 };

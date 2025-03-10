@@ -81,6 +81,46 @@ pub fn _(msgid: [*:0]const u8) [*:0]const u8 {
     return dgettext(build_config.bundle_id, msgid);
 }
 
+/// Canonicalize a locale name from a platform-specific value to
+/// a POSIX-compliant value. This is a thin layer over the unexported
+/// gnulib-lib function in gettext that does this already.
+///
+/// The gnulib-lib function modifies the buffer in place but has
+/// zero bounds checking, so we do a bit extra to ensure we don't
+/// overflow the buffer. This is likely slightly more expensive but
+/// this isn't a hot path so it should be fine.
+///
+/// The buffer must be at least 16 bytes long. This ensures we can
+/// fit the longest possible hardcoded locale name. Additionally,
+/// it should be at least as long as locale in case the locale
+/// is unchanged.
+///
+/// Here is the logic for macOS, but other platforms also have
+/// their own canonicalization logic:
+///
+/// https://github.com/coreutils/gnulib/blob/5b92dd0a45c8d27f13a21076b57095ea5e220870/lib/localename.c#L1171
+pub fn canonicalizeLocale(
+    buf: []u8,
+    locale: []const u8,
+) error{NoSpaceLeft}![:0]const u8 {
+    // Buffer must be 16 or at least as long as the locale and null term
+    if (buf.len < @max(16, locale.len + 1)) return error.NoSpaceLeft;
+
+    // Copy our locale into the buffer since it modifies in place.
+    // This must be null-terminated.
+    @memcpy(buf[0..locale.len], locale);
+    buf[locale.len] = 0;
+
+    _libintl_locale_name_canonicalize(buf[0..locale.len :0]);
+
+    // Convert the null-terminated result buffer into a slice. We
+    // need to search for the null terminator and slice it back.
+    // We have to use `buf` since `slice` len will exclude the
+    // null.
+    const slice = std.mem.sliceTo(buf, 0);
+    return buf[0..slice.len :0];
+}
+
 /// This can be called at any point a compile-time-known locale is
 /// available. This will use comptime to verify the locale is supported.
 pub fn staticLocale(comptime v: [*:0]const u8) [*:0]const u8 {
@@ -100,3 +140,23 @@ pub fn staticLocale(comptime v: [*:0]const u8) [*:0]const u8 {
 extern fn bindtextdomain(domainname: [*:0]const u8, dirname: [*:0]const u8) ?[*:0]const u8;
 extern fn textdomain(domainname: [*:0]const u8) ?[*:0]const u8;
 extern fn dgettext(domainname: [*:0]const u8, msgid: [*:0]const u8) [*:0]const u8;
+
+// This is only available if we're building libintl from source
+// since its otherwise not exported. We only need it on macOS
+// currently but probably will on Windows as well.
+extern fn _libintl_locale_name_canonicalize(name: [*:0]u8) void;
+
+test "canonicalizeLocale darwin" {
+    if (!builtin.target.isDarwin()) return error.SkipZigTest;
+
+    const testing = std.testing;
+    var buf: [256]u8 = undefined;
+    try testing.expectEqualStrings("en_US", try canonicalizeLocale(&buf, "en_US"));
+    try testing.expectEqualStrings("zh_CN", try canonicalizeLocale(&buf, "zh-Hans"));
+    try testing.expectEqualStrings("zh_TW", try canonicalizeLocale(&buf, "zh-Hant"));
+
+    // This is just an edge case I want to make sure we're aware of:
+    // canonicalizeLocale does not handle encodings and will turn them into
+    // underscores. We should parse them out before calling this function.
+    try testing.expectEqualStrings("en_US.UTF_8", try canonicalizeLocale(&buf, "en_US.UTF-8"));
+}

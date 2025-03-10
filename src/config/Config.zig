@@ -35,6 +35,8 @@ const ErrorList = @import("ErrorList.zig");
 const MetricModifier = fontpkg.Metrics.Modifier;
 const help_strings = @import("help_strings");
 const RepeatableStringMap = @import("RepeatableStringMap.zig");
+pub const Path = @import("path.zig").Path;
+pub const RepeatablePath = @import("path.zig").RepeatablePath;
 
 const log = std.log.scoped(.config);
 
@@ -1644,6 +1646,27 @@ keybind: Keybinds = .{},
 /// To enable this feature, bind the `toggle_quick_terminal` action to a key.
 @"quick-terminal-position": QuickTerminalPosition = .top,
 
+/// The size of the quick terminal.
+///
+/// The size can be specified either as a percentage of the screen dimensions
+/// (height/width), or as an absolute size in pixels. Percentage values are
+/// suffixed with `%` (e.g. `20%`) while pixel values are suffixed with `px`
+/// (e.g. `300px`). A bare value without a suffix is a config error.
+///
+/// When only one size is specified, the size parameter affects the size of
+/// the quick terminal on its *primary axis*, which depends on its position:
+/// height for quick terminals placed on the top or bottom, and width for left
+/// or right. The primary axis of a centered quick terminal depends on the
+/// monitor's orientation: height when on a landscape monitor, and width when
+/// on a portrait monitor.
+///
+/// The *secondary axis* would be maximized for non-center positioned
+/// quick terminals unless another size parameter is specified, separated
+/// from the first by a comma (`,`). Percentage and pixel sizes can be mixed
+/// together: for instance, a size of `50%,500px` for a top-positioned quick
+/// terminal would be half a screen tall, and 500 pixels wide.
+@"quick-terminal-size": QuickTerminalSize = .{},
+
 /// The screen where the quick terminal should show up.
 ///
 /// Valid values are:
@@ -2639,11 +2662,10 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
         }
     }
 
-    // Config files loaded from the CLI args are relative to pwd
-    if (self.@"config-file".value.items.len > 0) {
-        var buf: [std.fs.max_path_bytes]u8 = undefined;
-        try self.expandPaths(try std.fs.cwd().realpath(".", &buf));
-    }
+    // Any paths referenced from the CLI are relative to the current working
+    // directory.
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    try self.expandPaths(try std.fs.cwd().realpath(".", &buf));
 }
 
 /// Load and parse the config files that were added in the "config-file" key.
@@ -2828,12 +2850,15 @@ fn expandPaths(self: *Config, base: []const u8) !void {
 
     // Expand all of our paths
     inline for (@typeInfo(Config).Struct.fields) |field| {
-        if (field.type == RepeatablePath) {
-            try @field(self, field.name).expand(
-                arena_alloc,
-                base,
-                &self._diagnostics,
-            );
+        switch (field.type) {
+            RepeatablePath, Path => {
+                try @field(self, field.name).expand(
+                    arena_alloc,
+                    base,
+                    &self._diagnostics,
+                );
+            },
+            else => {},
         }
     }
 }
@@ -4109,272 +4134,6 @@ pub const RepeatableString = struct {
         try list.parseCLI(alloc, "B");
         try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
         try std.testing.expectEqualSlices(u8, "a = A\na = B\n", buf.items);
-    }
-};
-
-/// RepeatablePath is like repeatable string but represents a path value.
-/// The difference is that when loading the configuration any values for
-/// this will be automatically expanded relative to the path of the config
-/// file.
-pub const RepeatablePath = struct {
-    const Self = @This();
-
-    const Path = union(enum) {
-        /// No error if the file does not exist.
-        optional: [:0]const u8,
-
-        /// The file is required to exist.
-        required: [:0]const u8,
-    };
-
-    value: std.ArrayListUnmanaged(Path) = .{},
-
-    pub fn parseCLI(self: *Self, alloc: Allocator, input: ?[]const u8) !void {
-        const value, const optional = if (input) |value| blk: {
-            if (value.len == 0) {
-                self.value.clearRetainingCapacity();
-                return;
-            }
-
-            break :blk if (value[0] == '?')
-                .{ value[1..], true }
-            else if (value.len >= 2 and value[0] == '"' and value[value.len - 1] == '"')
-                .{ value[1 .. value.len - 1], false }
-            else
-                .{ value, false };
-        } else return error.ValueRequired;
-
-        if (value.len == 0) {
-            // This handles the case of zero length paths after removing any ?
-            // prefixes or surrounding quotes. In this case, we don't reset the
-            // list.
-            return;
-        }
-
-        const item: Path = if (optional)
-            .{ .optional = try alloc.dupeZ(u8, value) }
-        else
-            .{ .required = try alloc.dupeZ(u8, value) };
-
-        try self.value.append(alloc, item);
-    }
-
-    /// Deep copy of the struct. Required by Config.
-    pub fn clone(self: *const Self, alloc: Allocator) Allocator.Error!Self {
-        const value = try self.value.clone(alloc);
-        for (value.items) |*item| {
-            switch (item.*) {
-                .optional, .required => |*path| path.* = try alloc.dupeZ(u8, path.*),
-            }
-        }
-
-        return .{
-            .value = value,
-        };
-    }
-
-    /// Compare if two of our value are requal. Required by Config.
-    pub fn equal(self: Self, other: Self) bool {
-        if (self.value.items.len != other.value.items.len) return false;
-        for (self.value.items, other.value.items) |a, b| {
-            if (!std.meta.eql(a, b)) return false;
-        }
-
-        return true;
-    }
-
-    /// Used by Formatter
-    pub fn formatEntry(self: Self, formatter: anytype) !void {
-        if (self.value.items.len == 0) {
-            try formatter.formatEntry(void, {});
-            return;
-        }
-
-        var buf: [std.fs.max_path_bytes + 1]u8 = undefined;
-        for (self.value.items) |item| {
-            const value = switch (item) {
-                .optional => |path| std.fmt.bufPrint(
-                    &buf,
-                    "?{s}",
-                    .{path},
-                ) catch |err| switch (err) {
-                    // Required for builds on Linux where NoSpaceLeft
-                    // isn't an allowed error for fmt.
-                    error.NoSpaceLeft => return error.OutOfMemory,
-                },
-                .required => |path| path,
-            };
-
-            try formatter.formatEntry([]const u8, value);
-        }
-    }
-
-    /// Expand all the paths relative to the base directory.
-    pub fn expand(
-        self: *Self,
-        alloc: Allocator,
-        base: []const u8,
-        diags: *cli.DiagnosticList,
-    ) !void {
-        assert(std.fs.path.isAbsolute(base));
-        var dir = try std.fs.cwd().openDir(base, .{});
-        defer dir.close();
-
-        for (0..self.value.items.len) |i| {
-            const path = switch (self.value.items[i]) {
-                .optional, .required => |path| path,
-            };
-
-            // If it is already absolute we can ignore it.
-            if (path.len == 0 or std.fs.path.isAbsolute(path)) continue;
-
-            // If it isn't absolute, we need to make it absolute relative
-            // to the base.
-            var buf: [std.fs.max_path_bytes]u8 = undefined;
-
-            // Check if the path starts with a tilde and expand it to the
-            // home directory on Linux/macOS. We explicitly look for "~/"
-            // because we don't support alternate users such as "~alice/"
-            if (std.mem.startsWith(u8, path, "~/")) expand: {
-                // Windows isn't supported yet
-                if (comptime builtin.os.tag == .windows) break :expand;
-
-                const expanded: []const u8 = internal_os.expandHome(
-                    path,
-                    &buf,
-                ) catch |err| {
-                    try diags.append(alloc, .{
-                        .message = try std.fmt.allocPrintZ(
-                            alloc,
-                            "error expanding home directory for path {s}: {}",
-                            .{ path, err },
-                        ),
-                    });
-
-                    // Blank this path so that we don't attempt to resolve it
-                    // again
-                    self.value.items[i] = .{ .required = "" };
-
-                    continue;
-                };
-
-                log.debug(
-                    "expanding file path from home directory: path={s}",
-                    .{expanded},
-                );
-
-                switch (self.value.items[i]) {
-                    .optional, .required => |*p| p.* = try alloc.dupeZ(u8, expanded),
-                }
-
-                continue;
-            }
-
-            const abs = dir.realpath(path, &buf) catch |err| abs: {
-                if (err == error.FileNotFound) {
-                    // The file doesn't exist. Try to resolve the relative path
-                    // another way.
-                    const resolved = try std.fs.path.resolve(alloc, &.{ base, path });
-                    defer alloc.free(resolved);
-                    @memcpy(buf[0..resolved.len], resolved);
-                    break :abs buf[0..resolved.len];
-                }
-
-                try diags.append(alloc, .{
-                    .message = try std.fmt.allocPrintZ(
-                        alloc,
-                        "error resolving file path {s}: {}",
-                        .{ path, err },
-                    ),
-                });
-
-                // Blank this path so that we don't attempt to resolve it again
-                self.value.items[i] = .{ .required = "" };
-
-                continue;
-            };
-
-            log.debug(
-                "expanding file path relative={s} abs={s}",
-                .{ path, abs },
-            );
-
-            switch (self.value.items[i]) {
-                .optional, .required => |*p| p.* = try alloc.dupeZ(u8, abs),
-            }
-        }
-    }
-
-    test "parseCLI" {
-        const testing = std.testing;
-        var arena = ArenaAllocator.init(testing.allocator);
-        defer arena.deinit();
-        const alloc = arena.allocator();
-
-        var list: Self = .{};
-        try list.parseCLI(alloc, "config.1");
-        try list.parseCLI(alloc, "?config.2");
-        try list.parseCLI(alloc, "\"?config.3\"");
-
-        // Zero-length values, ignored
-        try list.parseCLI(alloc, "?");
-        try list.parseCLI(alloc, "\"\"");
-
-        try testing.expectEqual(@as(usize, 3), list.value.items.len);
-
-        const Tag = std.meta.Tag(Path);
-        try testing.expectEqual(Tag.required, @as(Tag, list.value.items[0]));
-        try testing.expectEqualStrings("config.1", list.value.items[0].required);
-
-        try testing.expectEqual(Tag.optional, @as(Tag, list.value.items[1]));
-        try testing.expectEqualStrings("config.2", list.value.items[1].optional);
-
-        try testing.expectEqual(Tag.required, @as(Tag, list.value.items[2]));
-        try testing.expectEqualStrings("?config.3", list.value.items[2].required);
-
-        try list.parseCLI(alloc, "");
-        try testing.expectEqual(@as(usize, 0), list.value.items.len);
-    }
-
-    test "formatConfig empty" {
-        const testing = std.testing;
-        var buf = std.ArrayList(u8).init(testing.allocator);
-        defer buf.deinit();
-
-        var list: Self = .{};
-        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
-        try std.testing.expectEqualSlices(u8, "a = \n", buf.items);
-    }
-
-    test "formatConfig single item" {
-        const testing = std.testing;
-        var buf = std.ArrayList(u8).init(testing.allocator);
-        defer buf.deinit();
-
-        var arena = ArenaAllocator.init(testing.allocator);
-        defer arena.deinit();
-        const alloc = arena.allocator();
-
-        var list: Self = .{};
-        try list.parseCLI(alloc, "A");
-        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
-        try std.testing.expectEqualSlices(u8, "a = A\n", buf.items);
-    }
-
-    test "formatConfig multiple items" {
-        const testing = std.testing;
-        var buf = std.ArrayList(u8).init(testing.allocator);
-        defer buf.deinit();
-
-        var arena = ArenaAllocator.init(testing.allocator);
-        defer arena.deinit();
-        const alloc = arena.allocator();
-
-        var list: Self = .{};
-        try list.parseCLI(alloc, "A");
-        try list.parseCLI(alloc, "?B");
-        try list.formatEntry(formatterpkg.entryFormatter("a", buf.writer()));
-        try std.testing.expectEqualSlices(u8, "a = A\na = ?B\n", buf.items);
     }
 };
 
@@ -5971,6 +5730,251 @@ pub const QuickTerminalPosition = enum {
     left,
     right,
     center,
+};
+
+/// See quick-terminal-size
+pub const QuickTerminalSize = struct {
+    primary: ?Size = null,
+    secondary: ?Size = null,
+
+    pub const Size = union(enum) {
+        percentage: f32,
+        pixels: u32,
+
+        pub fn toPixels(self: Size, parent_dimensions: u32) u32 {
+            switch (self) {
+                .percentage => |v| {
+                    const dim: f32 = @floatFromInt(parent_dimensions);
+                    return @intFromFloat(v / 100.0 * dim);
+                },
+                .pixels => |v| return v,
+            }
+        }
+
+        pub fn parse(input: []const u8) !Size {
+            if (input.len == 0) return error.ValueRequired;
+
+            if (std.mem.endsWith(u8, input, "px")) {
+                return .{
+                    .pixels = std.fmt.parseInt(
+                        u32,
+                        input[0 .. input.len - "px".len],
+                        10,
+                    ) catch return error.InvalidValue,
+                };
+            }
+
+            if (std.mem.endsWith(u8, input, "%")) {
+                const percentage = std.fmt.parseFloat(
+                    f32,
+                    input[0 .. input.len - "%".len],
+                ) catch return error.InvalidValue;
+
+                if (percentage < 0) return error.InvalidValue;
+                return .{ .percentage = percentage };
+            }
+
+            return error.MissingUnit;
+        }
+
+        fn format(self: Size, writer: anytype) !void {
+            switch (self) {
+                .percentage => |v| try writer.print("{d}%", .{v}),
+                .pixels => |v| try writer.print("{}px", .{v}),
+            }
+        }
+    };
+
+    pub const Dimensions = struct {
+        width: u32,
+        height: u32,
+    };
+
+    pub fn calculate(
+        self: QuickTerminalSize,
+        position: QuickTerminalPosition,
+        dims: Dimensions,
+    ) Dimensions {
+        switch (position) {
+            .left, .right => return .{
+                .width = if (self.primary) |v| v.toPixels(dims.width) else 400,
+                .height = if (self.secondary) |v| v.toPixels(dims.height) else dims.height,
+            },
+            .top, .bottom => return .{
+                .width = if (self.secondary) |v| v.toPixels(dims.width) else dims.width,
+                .height = if (self.primary) |v| v.toPixels(dims.height) else 400,
+            },
+            .center => if (dims.width >= dims.height) {
+                return .{
+                    .width = if (self.primary) |v| v.toPixels(dims.width) else 800,
+                    .height = if (self.secondary) |v| v.toPixels(dims.height) else 400,
+                };
+            } else {
+                return .{
+                    .width = if (self.secondary) |v| v.toPixels(dims.width) else 400,
+                    .height = if (self.primary) |v| v.toPixels(dims.height) else 800,
+                };
+            },
+        }
+    }
+
+    pub fn parseCLI(self: *QuickTerminalSize, input: ?[]const u8) !void {
+        const input_ = input orelse return error.ValueRequired;
+        var it = std.mem.splitScalar(u8, input_, ',');
+
+        const primary = std.mem.trim(
+            u8,
+            it.next() orelse return error.ValueRequired,
+            cli.args.whitespace,
+        );
+        self.primary = try Size.parse(primary);
+
+        self.secondary = secondary: {
+            const secondary = std.mem.trim(
+                u8,
+                it.next() orelse break :secondary null,
+                cli.args.whitespace,
+            );
+            break :secondary try Size.parse(secondary);
+        };
+
+        if (it.next()) |_| return error.TooManyArguments;
+    }
+
+    pub fn clone(self: *const QuickTerminalSize, _: Allocator) Allocator.Error!QuickTerminalSize {
+        return .{
+            .primary = self.primary,
+            .secondary = self.secondary,
+        };
+    }
+
+    pub fn formatEntry(self: QuickTerminalSize, formatter: anytype) !void {
+        const primary = self.primary orelse return;
+
+        var buf: [4096]u8 = undefined;
+        var fbs = std.io.fixedBufferStream(&buf);
+        const writer = fbs.writer();
+
+        primary.format(writer) catch return error.OutOfMemory;
+        if (self.secondary) |secondary| {
+            writer.writeByte(',') catch return error.OutOfMemory;
+            secondary.format(writer) catch return error.OutOfMemory;
+        }
+
+        try formatter.formatEntry([]const u8, fbs.getWritten());
+    }
+    test "parse QuickTerminalSize" {
+        const testing = std.testing;
+        var v: QuickTerminalSize = undefined;
+
+        try v.parseCLI("50%");
+        try testing.expectEqual(50, v.primary.?.percentage);
+        try testing.expectEqual(null, v.secondary);
+
+        try v.parseCLI("200px");
+        try testing.expectEqual(200, v.primary.?.pixels);
+        try testing.expectEqual(null, v.secondary);
+
+        try v.parseCLI("50%,200px");
+        try testing.expectEqual(50, v.primary.?.percentage);
+        try testing.expectEqual(200, v.secondary.?.pixels);
+
+        try testing.expectError(error.ValueRequired, v.parseCLI(null));
+        try testing.expectError(error.ValueRequired, v.parseCLI(""));
+        try testing.expectError(error.ValueRequired, v.parseCLI("69px,"));
+        try testing.expectError(error.TooManyArguments, v.parseCLI("69px,42%,69px"));
+
+        try testing.expectError(error.MissingUnit, v.parseCLI("420"));
+        try testing.expectError(error.MissingUnit, v.parseCLI("bobr"));
+        try testing.expectError(error.InvalidValue, v.parseCLI("bobr%"));
+        try testing.expectError(error.InvalidValue, v.parseCLI("-32%"));
+        try testing.expectError(error.InvalidValue, v.parseCLI("-69px"));
+    }
+    test "calculate QuickTerminalSize" {
+        const testing = std.testing;
+        const dims_landscape: Dimensions = .{ .width = 2560, .height = 1600 };
+        const dims_portrait: Dimensions = .{ .width = 1600, .height = 2560 };
+
+        {
+            const size: QuickTerminalSize = .{};
+            try testing.expectEqual(
+                Dimensions{ .width = 2560, .height = 400 },
+                size.calculate(.top, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 400, .height = 1600 },
+                size.calculate(.left, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 800, .height = 400 },
+                size.calculate(.center, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 400, .height = 800 },
+                size.calculate(.center, dims_portrait),
+            );
+        }
+        {
+            const size: QuickTerminalSize = .{ .primary = .{ .percentage = 20 } };
+            try testing.expectEqual(
+                Dimensions{ .width = 2560, .height = 320 },
+                size.calculate(.top, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 512, .height = 1600 },
+                size.calculate(.left, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 512, .height = 400 },
+                size.calculate(.center, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 400, .height = 512 },
+                size.calculate(.center, dims_portrait),
+            );
+        }
+        {
+            const size: QuickTerminalSize = .{ .primary = .{ .pixels = 600 } };
+            try testing.expectEqual(
+                Dimensions{ .width = 2560, .height = 600 },
+                size.calculate(.top, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 600, .height = 1600 },
+                size.calculate(.left, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 600, .height = 400 },
+                size.calculate(.center, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 400, .height = 600 },
+                size.calculate(.center, dims_portrait),
+            );
+        }
+        {
+            const size: QuickTerminalSize = .{
+                .primary = .{ .percentage = 69 },
+                .secondary = .{ .pixels = 420 },
+            };
+            try testing.expectEqual(
+                Dimensions{ .width = 420, .height = 1104 },
+                size.calculate(.top, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 1766, .height = 420 },
+                size.calculate(.left, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 1766, .height = 420 },
+                size.calculate(.center, dims_landscape),
+            );
+            try testing.expectEqual(
+                Dimensions{ .width = 420, .height = 1766 },
+                size.calculate(.center, dims_portrait),
+            );
+        }
+    }
 };
 
 /// See quick-terminal-screen

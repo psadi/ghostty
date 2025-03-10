@@ -52,3 +52,7 @@ pub const OpenType = openpkg.Type;
 pub const pipe = pipepkg.pipe;
 pub const resourcesDir = resourcesdir.resourcesDir;
 pub const ShellEscapeWriter = shell.ShellEscapeWriter;
+
+test {
+    _ = i18n;
+}

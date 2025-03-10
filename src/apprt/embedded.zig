@@ -1039,6 +1039,13 @@ pub const Surface = struct {
 
             // Remove this so that running `ghostty` within Ghostty works.
             env.remove("GHOSTTY_MAC_APP");
+
+            // If we were launched from the desktop then we want to
+            // remove the LANGUAGE env var so that we don't inherit
+            // our translation settings for Ghostty. If we aren't from
+            // the desktop then we didn't set our LANGUAGE var so we
+            // don't need to remove it.
+            if (internal_os.launchedFromDesktop()) env.remove("LANGUAGE");
         }
 
         return env;
