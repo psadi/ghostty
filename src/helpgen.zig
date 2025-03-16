@@ -34,7 +34,7 @@ fn genConfig(alloc: std.mem.Allocator, writer: anytype) !void {
         \\
     );
 
-    inline for (@typeInfo(Config).Struct.fields) |field| {
+    inline for (@typeInfo(Config).@"struct".fields) |field| {
         if (field.name[0] == '_') continue;
         try genConfigField(alloc, writer, ast, field.name);
     }
@@ -78,7 +78,7 @@ fn genActions(alloc: std.mem.Allocator, writer: anytype) !void {
         \\
     );
 
-    inline for (@typeInfo(Action).Enum.fields) |field| {
+    inline for (@typeInfo(Action).@"enum".fields) |field| {
         const action_file = comptime action_file: {
             const action = @field(Action, field.name);
             break :action_file action.file();
@@ -126,7 +126,7 @@ fn genKeybindActions(alloc: std.mem.Allocator, writer: anytype) !void {
         \\
     );
 
-    inline for (@typeInfo(KeybindAction).Union.fields) |field| {
+    inline for (@typeInfo(KeybindAction).@"union".fields) |field| {
         if (field.name[0] == '_') continue;
         try genConfigField(alloc, writer, ast, field.name);
     }

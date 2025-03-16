@@ -597,7 +597,7 @@ pub const CoreText = struct {
     /// We represent our sorting score as a packed struct so that we can
     /// compare scores numerically but build scores symbolically.
     const Score = packed struct {
-        const Backing = @typeInfo(@This()).Struct.backing_integer.?;
+        const Backing = @typeInfo(@This()).@"struct".backing_integer.?;
 
         glyph_count: u16 = 0, // clamped if > intmax
         traits: Traits = .unmatched,

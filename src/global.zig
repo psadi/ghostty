@@ -211,9 +211,7 @@ pub const GlobalState = struct {
         // often write to a broken pipe to exit the read thread. This should
         // be fixed one day but for now this helps make this a bit more
         // robust.
-        p.sigaction(p.SIG.PIPE, &sa, null) catch |err| {
-            std.log.warn("failed to ignore SIGPIPE err={}", .{err});
-        };
+        p.sigaction(p.SIG.PIPE, &sa, null);
     }
 };
 

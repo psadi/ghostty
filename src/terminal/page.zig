@@ -83,7 +83,7 @@ pub const Page = struct {
     comptime {
         // The alignment of our members. We want to ensure that the page
         // alignment is always divisible by this.
-        assert(std.mem.page_size % @max(
+        assert(std.heap.page_size_min % @max(
             @alignOf(Row),
             @alignOf(Cell),
             style.Set.base_align,
@@ -93,7 +93,7 @@ pub const Page = struct {
     /// The backing memory for the page. A page is always made up of a
     /// a single contiguous block of memory that is aligned on a page
     /// boundary and is a multiple of the system page size.
-    memory: []align(std.mem.page_size) u8,
+    memory: []align(std.heap.page_size_min) u8,
 
     /// The array of rows in the page. The rows are always in row order
     /// (i.e. index 0 is the top row, index 1 is the row below that, etc.)
@@ -198,7 +198,7 @@ pub const Page = struct {
         // (small but meaningful for this path) and because a private
         // anonymous mmap is guaranteed on Linux and macOS to be zeroed,
         // which is a critical property for us.
-        assert(l.total_size % std.mem.page_size == 0);
+        assert(l.total_size % std.heap.page_size_min == 0);
         const backing = try posix.mmap(
             null,
             l.total_size,
@@ -611,7 +611,7 @@ pub const Page = struct {
     /// Clone the entire contents of this page.
     ///
     /// The buffer must be at least the size of self.memory.
-    pub fn cloneBuf(self: *const Page, buf: []align(std.mem.page_size) u8) Page {
+    pub fn cloneBuf(self: *const Page, buf: []align(std.heap.page_size_min) u8) Page {
         assert(buf.len >= self.memory.len);
 
         // The entire concept behind a page is that everything is stored
@@ -1721,7 +1721,7 @@ pub const Page = struct {
         const dirty_start = alignForward(usize, cells_end, @alignOf(usize));
         const dirty_end: usize = dirty_start + (dirty_usize_length * @sizeOf(usize));
 
-        const styles_layout = style.Set.layout(cap.styles);
+        const styles_layout: style.Set.Layout = .init(cap.styles);
         const styles_start = alignForward(usize, dirty_end, style.Set.base_align);
         const styles_end = styles_start + styles_layout.total_size;
 
@@ -1739,7 +1739,7 @@ pub const Page = struct {
         const string_end = string_start + string_layout.total_size;
 
         const hyperlink_count = @divFloor(cap.hyperlink_bytes, @sizeOf(hyperlink.Set.Item));
-        const hyperlink_set_layout = hyperlink.Set.layout(@intCast(hyperlink_count));
+        const hyperlink_set_layout: hyperlink.Set.Layout = .init(@intCast(hyperlink_count));
         const hyperlink_set_start = alignForward(usize, string_end, hyperlink.Set.base_align);
         const hyperlink_set_end = hyperlink_set_start + hyperlink_set_layout.total_size;
 
@@ -1755,7 +1755,7 @@ pub const Page = struct {
         const hyperlink_map_start = alignForward(usize, hyperlink_set_end, hyperlink.Map.base_align);
         const hyperlink_map_end = hyperlink_map_start + hyperlink_map_layout.total_size;
 
-        const total_size = alignForward(usize, hyperlink_map_end, std.mem.page_size);
+        const total_size = alignForward(usize, hyperlink_map_end, std.heap.page_size_min);
 
         return .{
             .total_size = total_size,
@@ -2124,12 +2124,12 @@ pub const Cell = packed struct(u64) {
 //             .styles = 128,
 //             .grapheme_bytes = 1024,
 //         }).total_size,
-//         std.mem.page_size,
+//         std.heap.page_size_min,
 //     );
 //
 //     std.log.warn("total_size={} pages={}", .{
 //         total_size,
-//         total_size / std.mem.page_size,
+//         total_size / std.heap.page_size_min,
 //     });
 // }
 //
@@ -2139,7 +2139,7 @@ pub const Cell = packed struct(u64) {
 //     // so we fail a test if it changes.
 //     const total_size = Page.layout(std_capacity).total_size;
 //     try testing.expectEqual(@as(usize, 524_288), total_size); // 512 KiB
-//     //const pages = total_size / std.mem.page_size;
+//     //const pages = total_size / std.heap.page_size_min;
 // }
 
 test "Cell is zero by default" {

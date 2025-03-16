@@ -99,7 +99,7 @@ fn checkNixShell(exe: *std.Build.Step.Compile, cfg: *const Config) !void {
             \\
             \\  nix develop -c zig build
             \\
-            ++
+        ++
             "\x1b[0m",
         .{},
     );

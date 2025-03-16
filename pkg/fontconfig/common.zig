@@ -84,7 +84,7 @@ pub const Property = enum {
 
     pub fn cval(self: Property) [:0]const u8 {
         @setEvalBranchQuota(10_000);
-        inline for (@typeInfo(Property).Enum.fields) |field| {
+        inline for (@typeInfo(Property).@"enum".fields) |field| {
             if (self == @field(Property, field.name)) {
                 // Build our string in a comptime context so it is a binary
                 // constant and not stack allocated.

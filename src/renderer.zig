@@ -48,7 +48,7 @@ pub const Impl = enum {
             };
         }
 
-        if (target.isDarwin()) return .metal;
+        if (target.os.tag.isDarwin()) return .metal;
         return .opengl;
     }
 };
@@ -70,5 +70,13 @@ pub const Health = enum(c_int) {
 };
 
 test {
-    @import("std").testing.refAllDecls(@This());
+    // Our comptime-chosen renderer
+    _ = Renderer;
+
+    _ = cursor;
+    _ = message;
+    _ = shadertoy;
+    _ = size;
+    _ = Thread;
+    _ = State;
 }

@@ -13,13 +13,17 @@ pub fn init(b: *std.Build) !UnicodeTables {
     const exe = b.addExecutable(.{
         .name = "unigen",
         .root_source_file = b.path("src/unicode/props.zig"),
-        .target = b.host,
+        .target = b.graph.host,
     });
 
-    const ziglyph_dep = b.dependency("ziglyph", .{
-        .target = b.host,
-    });
-    exe.root_module.addImport("ziglyph", ziglyph_dep.module("ziglyph"));
+    if (b.lazyDependency("ziglyph", .{
+        .target = b.graph.host,
+    })) |ziglyph_dep| {
+        exe.root_module.addImport(
+            "ziglyph",
+            ziglyph_dep.module("ziglyph"),
+        );
+    }
 
     const run = b.addRunArtifact(exe);
     return .{

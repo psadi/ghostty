@@ -1,11 +1,13 @@
 .{
-    .name = "libintl",
+    .name = .libintl,
     .version = "0.24.0",
+    .fingerprint = 0x16434c723ba7278a,
     .paths = .{""},
     .dependencies = .{
         .gettext = .{
             .url = "https://deps.files.ghostty.org/gettext-0.24.tar.gz",
-            .hash = "1220f870c853529233ea64a108acaaa81f8d06d7ff4b66c76930be7d78d508aff7a2",
+            .hash = "N-V-__8AADcZkgn4cMhTUpIz6mShCKyqqB-NBtf_S2bHaTC-",
+            .lazy = true,
         },
 
         .apple_sdk = .{ .path = "../apple-sdk" },

@@ -35,14 +35,20 @@ fn buildLib(b: *std.Build, module: *std.Build.Module, options: anytype) !*std.Bu
     const target = options.target;
     const optimize = options.optimize;
 
-    const upstream = b.dependency("gtk4_layer_shell", .{});
-    const wayland_protocols = b.dependency("wayland_protocols", .{});
     // Shared library
     const lib = b.addSharedLibrary(.{
         .name = "gtk4-layer-shell",
         .target = target,
         .optimize = optimize,
     });
+    b.installArtifact(lib);
+
+    // We need to call both lazy dependencies to tell Zig we need both
+    const upstream_ = b.lazyDependency("gtk4_layer_shell", .{});
+    const wayland_protocols_ = b.lazyDependency("wayland_protocols", .{});
+    const upstream = upstream_ orelse return lib;
+    const wayland_protocols = wayland_protocols_ orelse return lib;
+
     lib.linkLibC();
     lib.addIncludePath(upstream.path("include"));
     lib.addIncludePath(upstream.path("src"));
@@ -111,9 +117,18 @@ fn buildLib(b: *std.Build, module: *std.Build.Module, options: anytype) !*std.Bu
             b.fmt("-DGTK_LAYER_SHELL_MAJOR={}", .{version.major}),
             b.fmt("-DGTK_LAYER_SHELL_MINOR={}", .{version.minor}),
             b.fmt("-DGTK_LAYER_SHELL_MICRO={}", .{version.patch}),
+
+            // Zig 0.14 regression: this is required because building with
+            // ubsan results in unknown symbols. Bundling the ubsan/compiler
+            // RT doesn't help. I'm not sure what the root cause is but I
+            // suspect its related to this:
+            // https://github.com/ziglang/zig/issues/23052
+            //
+            // We can remove this in the future for Zig updates and see
+            // if our binaries run in debug on NixOS.
+            "-fno-sanitize=undefined",
         },
     });
 
-    b.installArtifact(lib);
     return lib;
 }

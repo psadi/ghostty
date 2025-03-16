@@ -130,7 +130,7 @@ fn logFn(
     //
     //   sudo log stream --level debug --predicate 'subsystem=="com.mitchellh.ghostty"'
     //
-    if (builtin.target.isDarwin()) {
+    if (builtin.target.os.tag.isDarwin()) {
         // Convert our levels to Mac levels
         const mac_level: macos.os.LogType = switch (level) {
             .debug => .debug,

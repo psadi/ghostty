@@ -132,60 +132,6 @@ pub fn RefCountedSet(
         /// An instance of the context structure.
         context: Context,
 
-        /// Returns the memory layout for the given base offset and
-        /// desired capacity. The layout can be used by the caller to
-        /// determine how much memory to allocate, and the layout must
-        /// be used to initialize the set so that the set knows all
-        /// the offsets for the various buffers.
-        ///
-        /// The capacity passed for cap will be used for the hash table,
-        /// which has a load factor of `0.8125` (13/16), so the number of
-        /// items which can actually be stored in the set will be smaller.
-        ///
-        /// The laid out capacity will be at least `cap`, but may be higher,
-        /// since it is rounded up to the next power of 2 for efficiency.
-        ///
-        /// The returned layout `cap` property will be 1 more than the number
-        /// of items that the set can actually store, since ID 0 is reserved.
-        pub fn layout(cap: usize) Layout {
-            // Experimentally, this load factor works quite well.
-            const load_factor = 0.8125;
-
-            assert(cap <= @as(usize, @intCast(std.math.maxInt(Id))) + 1);
-
-            // Zero-cap set is valid, return special case
-            if (cap == 0) return .{
-                .cap = 0,
-                .table_cap = 0,
-                .table_mask = 0,
-                .table_start = 0,
-                .items_start = 0,
-                .total_size = 0,
-            };
-
-            const table_cap: usize = std.math.ceilPowerOfTwoAssert(usize, cap);
-            const items_cap: usize = @intFromFloat(load_factor * @as(f64, @floatFromInt(table_cap)));
-
-            const table_mask: Id = @intCast((@as(usize, 1) << std.math.log2_int(usize, table_cap)) - 1);
-
-            const table_start = 0;
-            const table_end = table_start + table_cap * @sizeOf(Id);
-
-            const items_start = std.mem.alignForward(usize, table_end, @alignOf(Item));
-            const items_end = items_start + items_cap * @sizeOf(Item);
-
-            const total_size = items_end;
-
-            return .{
-                .cap = items_cap,
-                .table_cap = table_cap,
-                .table_mask = table_mask,
-                .table_start = table_start,
-                .items_start = items_start,
-                .total_size = total_size,
-            };
-        }
-
         pub const Layout = struct {
             cap: usize,
             table_cap: usize,
@@ -193,6 +139,60 @@ pub fn RefCountedSet(
             table_start: usize,
             items_start: usize,
             total_size: usize,
+
+            /// Returns the memory layout for the given base offset and
+            /// desired capacity. The layout can be used by the caller to
+            /// determine how much memory to allocate, and the layout must
+            /// be used to initialize the set so that the set knows all
+            /// the offsets for the various buffers.
+            ///
+            /// The capacity passed for cap will be used for the hash table,
+            /// which has a load factor of `0.8125` (13/16), so the number of
+            /// items which can actually be stored in the set will be smaller.
+            ///
+            /// The laid out capacity will be at least `cap`, but may be higher,
+            /// since it is rounded up to the next power of 2 for efficiency.
+            ///
+            /// The returned layout `cap` property will be 1 more than the number
+            /// of items that the set can actually store, since ID 0 is reserved.
+            pub fn init(cap: usize) Layout {
+                // Experimentally, this load factor works quite well.
+                const load_factor = 0.8125;
+
+                assert(cap <= @as(usize, @intCast(std.math.maxInt(Id))) + 1);
+
+                // Zero-cap set is valid, return special case
+                if (cap == 0) return .{
+                    .cap = 0,
+                    .table_cap = 0,
+                    .table_mask = 0,
+                    .table_start = 0,
+                    .items_start = 0,
+                    .total_size = 0,
+                };
+
+                const table_cap: usize = std.math.ceilPowerOfTwoAssert(usize, cap);
+                const items_cap: usize = @intFromFloat(load_factor * @as(f64, @floatFromInt(table_cap)));
+
+                const table_mask: Id = @intCast((@as(usize, 1) << std.math.log2_int(usize, table_cap)) - 1);
+
+                const table_start = 0;
+                const table_end = table_start + table_cap * @sizeOf(Id);
+
+                const items_start = std.mem.alignForward(usize, table_end, @alignOf(Item));
+                const items_end = items_start + items_cap * @sizeOf(Item);
+
+                const total_size = items_end;
+
+                return .{
+                    .cap = items_cap,
+                    .table_cap = table_cap,
+                    .table_mask = table_mask,
+                    .table_start = table_start,
+                    .items_start = items_start,
+                    .total_size = total_size,
+                };
+            }
         };
 
         pub fn init(base: OffsetBuf, l: Layout, context: Context) Self {

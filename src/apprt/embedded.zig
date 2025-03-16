@@ -165,7 +165,7 @@ pub const App = struct {
         // then we strip the alt modifier from the mods for translation.
         const translate_mods = translate_mods: {
             var translate_mods = mods;
-            if ((comptime builtin.target.isDarwin()) and translate_mods.alt) {
+            if ((comptime builtin.target.os.tag.isDarwin()) and translate_mods.alt) {
                 // Note: the keyboardLayout() function is not super cheap
                 // so we only want to run it if alt is already pressed hence
                 // the above condition.
@@ -184,7 +184,7 @@ pub const App = struct {
 
             // We strip super on macOS because its not used for translation
             // it results in a bad translation.
-            if (comptime builtin.target.isDarwin()) {
+            if (comptime builtin.target.os.tag.isDarwin()) {
                 translate_mods.super = false;
             }
 
@@ -538,12 +538,12 @@ pub const Platform = union(PlatformTag) {
 
     // If our build target for libghostty is not darwin then we do
     // not include macos support at all.
-    pub const MacOS = if (builtin.target.isDarwin()) struct {
+    pub const MacOS = if (builtin.target.os.tag.isDarwin()) struct {
         /// The view to render the surface on.
         nsview: objc.Object,
     } else void;
 
-    pub const IOS = if (builtin.target.isDarwin()) struct {
+    pub const IOS = if (builtin.target.os.tag.isDarwin()) struct {
         /// The view to render the surface on.
         uiview: objc.Object,
     } else void;
@@ -1025,7 +1025,7 @@ pub const Surface = struct {
         var env = try internal_os.getEnvMap(alloc);
         errdefer env.deinit();
 
-        if (comptime builtin.target.isDarwin()) {
+        if (comptime builtin.target.os.tag.isDarwin()) {
             if (env.get("__XCODE_BUILT_PRODUCTS_DIR_PATHS") != null) {
                 env.remove("__XCODE_BUILT_PRODUCTS_DIR_PATHS");
                 env.remove("__XPC_DYLD_LIBRARY_PATH");
@@ -1078,7 +1078,7 @@ pub const Inspector = struct {
 
         pub fn deinit(self: Backend) void {
             switch (self) {
-                .metal => if (builtin.target.isDarwin()) cimgui.ImGui_ImplMetal_Shutdown(),
+                .metal => if (builtin.target.os.tag.isDarwin()) cimgui.ImGui_ImplMetal_Shutdown(),
             }
         }
     };
@@ -1351,7 +1351,7 @@ pub const CAPI = struct {
     // Reference the conditional exports based on target platform
     // so they're included in the C API.
     comptime {
-        if (builtin.target.isDarwin()) {
+        if (builtin.target.os.tag.isDarwin()) {
             _ = Darwin;
         }
     }

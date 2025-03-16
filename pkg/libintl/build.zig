@@ -22,8 +22,6 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const upstream = b.dependency("gettext", .{});
-
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
     try flags.appendSlice(&.{
@@ -39,19 +37,21 @@ pub fn build(b: *std.Build) !void {
         });
         lib.linkLibC();
         lib.addIncludePath(b.path(""));
-        lib.addIncludePath(upstream.path("gettext-runtime/intl"));
-        lib.addIncludePath(upstream.path("gettext-runtime/intl/gnulib-lib"));
 
-        if (target.result.isDarwin()) {
+        if (target.result.os.tag.isDarwin()) {
             const apple_sdk = @import("apple_sdk");
-            try apple_sdk.addPaths(b, &lib.root_module);
+            try apple_sdk.addPaths(b, lib.root_module);
         }
 
-        lib.addCSourceFiles(.{
-            .root = upstream.path("gettext-runtime/intl"),
-            .files = srcs,
-            .flags = flags.items,
-        });
+        if (b.lazyDependency("gettext", .{})) |upstream| {
+            lib.addIncludePath(upstream.path("gettext-runtime/intl"));
+            lib.addIncludePath(upstream.path("gettext-runtime/intl/gnulib-lib"));
+            lib.addCSourceFiles(.{
+                .root = upstream.path("gettext-runtime/intl"),
+                .files = srcs,
+                .flags = flags.items,
+            });
+        }
 
         lib.installHeader(b.path("libintl.h"), "libintl.h");
         b.installArtifact(lib);

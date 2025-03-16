@@ -64,7 +64,6 @@ fn buildLib(b: *std.Build, module: *std.Build.Module, options: anytype) !*std.Bu
     const libxml2_iconv_enabled = options.libxml2_iconv_enabled;
     const freetype_enabled = options.freetype_enabled;
 
-    const upstream = b.dependency("fontconfig", .{});
     const lib = b.addStaticLibrary(.{
         .name = "fontconfig",
         .target = target,
@@ -75,9 +74,7 @@ fn buildLib(b: *std.Build, module: *std.Build.Module, options: anytype) !*std.Bu
         lib.linkSystemLibrary("pthread");
     }
 
-    lib.addIncludePath(upstream.path(""));
     lib.addIncludePath(b.path("override/include"));
-    module.addIncludePath(upstream.path(""));
     module.addIncludePath(b.path("override/include"));
 
     var flags = std.ArrayList([]const u8).init(b.allocator);
@@ -188,11 +185,12 @@ fn buildLib(b: *std.Build, module: *std.Build.Module, options: anytype) !*std.Bu
         if (b.systemIntegrationOption("freetype", .{})) {
             lib.linkSystemLibrary2("freetype2", dynamic_link_opts);
         } else {
-            const freetype_dep = b.dependency(
+            if (b.lazyDependency(
                 "freetype",
                 .{ .target = target, .optimize = optimize },
-            );
-            lib.linkLibrary(freetype_dep.artifact("freetype"));
+            )) |freetype_dep| {
+                lib.linkLibrary(freetype_dep.artifact("freetype"));
+            }
         }
     }
 
@@ -214,26 +212,31 @@ fn buildLib(b: *std.Build, module: *std.Build.Module, options: anytype) !*std.Bu
         if (b.systemIntegrationOption("libxml2", .{})) {
             lib.linkSystemLibrary2("libxml-2.0", dynamic_link_opts);
         } else {
-            const libxml2_dep = b.dependency("libxml2", .{
+            if (b.lazyDependency("libxml2", .{
                 .target = target,
                 .optimize = optimize,
                 .iconv = libxml2_iconv_enabled,
-            });
-            lib.linkLibrary(libxml2_dep.artifact("xml2"));
+            })) |libxml2_dep| {
+                lib.linkLibrary(libxml2_dep.artifact("xml2"));
+            }
         }
     }
 
-    lib.addCSourceFiles(.{
-        .root = upstream.path(""),
-        .files = srcs,
-        .flags = flags.items,
-    });
+    if (b.lazyDependency("fontconfig", .{})) |upstream| {
+        lib.addIncludePath(upstream.path(""));
+        module.addIncludePath(upstream.path(""));
+        lib.addCSourceFiles(.{
+            .root = upstream.path(""),
+            .files = srcs,
+            .flags = flags.items,
+        });
 
-    lib.installHeadersDirectory(
-        upstream.path("fontconfig"),
-        "fontconfig",
-        .{ .include_extensions = &.{".h"} },
-    );
+        lib.installHeadersDirectory(
+            upstream.path("fontconfig"),
+            "fontconfig",
+            .{ .include_extensions = &.{".h"} },
+        );
+    }
 
     b.installArtifact(lib);
 

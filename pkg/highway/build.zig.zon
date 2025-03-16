@@ -1,12 +1,13 @@
 .{
-    .name = "highway",
-    .version = "1.1.0",
+    .name = .highway,
+    .version = "1.2.0",
+    .fingerprint = 0xdbcf1a7425023274,
     .paths = .{""},
     .dependencies = .{
         // google/highway
         .highway = .{
-            .url = "https://deps.files.ghostty.org/highway-12205c83b8311a24b1d5ae6d21640df04f4b0726e314337c043cde1432758cbe165b.tar.gz",
-            .hash = "12205c83b8311a24b1d5ae6d21640df04f4b0726e314337c043cde1432758cbe165b",
+            .url = "https://deps.files.ghostty.org/highway-66486a10623fa0d72fe91260f96c892e41aceb06.tar.gz",
+            .hash = "N-V-__8AAGmZhABbsPJLfbqrh6JTHsXhY6qCaLAQyx25e0XE",
         },
 
         .apple_sdk = .{ .path = "../apple-sdk" },

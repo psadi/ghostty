@@ -199,7 +199,7 @@ pub const VTEvent = struct {
             void => {},
             []const u8 => try md.put("data", try alloc.dupeZ(u8, v)),
             else => |T| switch (@typeInfo(T)) {
-                .Struct => |info| inline for (info.fields) |field| {
+                .@"struct" => |info| inline for (info.fields) |field| {
                     try encodeMetadataSingle(
                         alloc,
                         md,
@@ -208,7 +208,7 @@ pub const VTEvent = struct {
                     );
                 },
 
-                .Union => |info| {
+                .@"union" => |info| {
                     const Tag = info.tag_type orelse @compileError("Unions must have a tag");
                     const tag_name = @tagName(@as(Tag, v));
                     inline for (info.fields) |field| {
@@ -239,23 +239,23 @@ pub const VTEvent = struct {
         const Value = @TypeOf(value);
         const info = @typeInfo(Value);
         switch (info) {
-            .Optional => if (value) |unwrapped| {
+            .optional => if (value) |unwrapped| {
                 try encodeMetadataSingle(alloc, md, key, unwrapped);
             } else {
                 try md.put(key, try alloc.dupeZ(u8, "(unset)"));
             },
 
-            .Bool => try md.put(
+            .bool => try md.put(
                 key,
                 try alloc.dupeZ(u8, if (value) "true" else "false"),
             ),
 
-            .Enum => try md.put(
+            .@"enum" => try md.put(
                 key,
                 try alloc.dupeZ(u8, @tagName(value)),
             ),
 
-            .Union => |u| {
+            .@"union" => |u| {
                 const Tag = u.tag_type orelse @compileError("Unions must have a tag");
                 const tag_name = @tagName(@as(Tag, value));
                 inline for (u.fields) |field| {
@@ -273,7 +273,7 @@ pub const VTEvent = struct {
                 }
             },
 
-            .Struct => try md.put(
+            .@"struct" => try md.put(
                 key,
                 try alloc.dupeZ(u8, @typeName(Value)),
             ),

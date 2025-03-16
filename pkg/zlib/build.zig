@@ -4,39 +4,39 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const upstream = b.dependency("zlib", .{});
-
     const lib = b.addStaticLibrary(.{
         .name = "z",
         .target = target,
         .optimize = optimize,
     });
     lib.linkLibC();
-    lib.addIncludePath(upstream.path(""));
-    if (target.result.isDarwin()) {
+    if (target.result.os.tag.isDarwin()) {
         const apple_sdk = @import("apple_sdk");
-        try apple_sdk.addPaths(b, &lib.root_module);
+        try apple_sdk.addPaths(b, lib.root_module);
     }
 
-    lib.installHeadersDirectory(
-        upstream.path(""),
-        "",
-        .{ .include_extensions = &.{".h"} },
-    );
+    if (b.lazyDependency("zlib", .{})) |upstream| {
+        lib.addIncludePath(upstream.path(""));
+        lib.installHeadersDirectory(
+            upstream.path(""),
+            "",
+            .{ .include_extensions = &.{".h"} },
+        );
 
-    var flags = std.ArrayList([]const u8).init(b.allocator);
-    defer flags.deinit();
-    try flags.appendSlice(&.{
-        "-DHAVE_SYS_TYPES_H",
-        "-DHAVE_STDINT_H",
-        "-DHAVE_STDDEF_H",
-        "-DZ_HAVE_UNISTD_H",
-    });
-    lib.addCSourceFiles(.{
-        .root = upstream.path(""),
-        .files = srcs,
-        .flags = flags.items,
-    });
+        var flags = std.ArrayList([]const u8).init(b.allocator);
+        defer flags.deinit();
+        try flags.appendSlice(&.{
+            "-DHAVE_SYS_TYPES_H",
+            "-DHAVE_STDINT_H",
+            "-DHAVE_STDDEF_H",
+            "-DZ_HAVE_UNISTD_H",
+        });
+        lib.addCSourceFiles(.{
+            .root = upstream.path(""),
+            .files = srcs,
+            .flags = flags.items,
+        });
+    }
 
     b.installArtifact(lib);
 }

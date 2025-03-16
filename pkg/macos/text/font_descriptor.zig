@@ -276,7 +276,7 @@ test "descriptor" {
     const v = try FontDescriptor.createWithNameAndSize(name, 12);
     defer v.release();
 
-    const copy_name = v.copyAttribute(.name);
+    const copy_name = v.copyAttribute(.name).?;
     defer copy_name.release();
 
     {

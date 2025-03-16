@@ -54,14 +54,14 @@ pub const Location = union(enum) {
         line: usize,
     },
 
-    pub const Key = @typeInfo(Location).Union.tag_type.?;
+    pub const Key = @typeInfo(Location).@"union".tag_type.?;
 
     pub fn fromIter(iter: anytype, alloc: Allocator) Allocator.Error!Location {
         const Iter = t: {
             const T = @TypeOf(iter);
             break :t switch (@typeInfo(T)) {
-                .Pointer => |v| v.child,
-                .Struct => T,
+                .pointer => |v| v.child,
+                .@"struct" => T,
                 else => return .none,
             };
         };

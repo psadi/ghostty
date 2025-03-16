@@ -21,7 +21,7 @@ pub fn build(b: *std.Build) !void {
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
     lib.addCSourceFile(.{
-        .file = b.path("os/log.c"),
+        .file = b.path("os/zig_log.c"),
         .flags = flags.items,
     });
     lib.addCSourceFile(.{
@@ -38,17 +38,15 @@ pub fn build(b: *std.Build) !void {
         module.linkFramework("Carbon", .{});
     }
 
-    if (target.result.isDarwin()) {
+    if (target.result.os.tag.isDarwin()) {
         module.linkFramework("CoreFoundation", .{});
         module.linkFramework("CoreGraphics", .{});
         module.linkFramework("CoreText", .{});
         module.linkFramework("CoreVideo", .{});
         module.linkFramework("QuartzCore", .{});
 
-        if (!target.query.isNative()) {
-            try apple_sdk.addPaths(b, &lib.root_module);
-            try apple_sdk.addPaths(b, module);
-        }
+        try apple_sdk.addPaths(b, lib.root_module);
+        try apple_sdk.addPaths(b, module);
     }
     b.installArtifact(lib);
 
@@ -59,9 +57,20 @@ pub fn build(b: *std.Build) !void {
             .target = target,
             .optimize = optimize,
         });
+        if (target.result.os.tag.isDarwin()) {
+            try apple_sdk.addPaths(b, test_exe.root_module);
+        }
         test_exe.linkLibrary(lib);
+
         var it = module.import_table.iterator();
-        while (it.next()) |entry| test_exe.root_module.addImport(entry.key_ptr.*, entry.value_ptr.*);
+        while (it.next()) |entry| {
+            test_exe.root_module.addImport(
+                entry.key_ptr.*,
+                entry.value_ptr.*,
+            );
+        }
+
+        b.installArtifact(test_exe);
 
         const tests_run = b.addRunArtifact(test_exe);
         const test_step = b.step("test", "Run tests");

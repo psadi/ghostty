@@ -34,7 +34,7 @@ pub fn HashMap(
     return struct {
         const Self = @This();
         const Map = std.HashMapUnmanaged(K, *Queue.Node, Context, max_load_percentage);
-        const Queue = std.TailQueue(KV);
+        const Queue = std.DoublyLinkedList(KV);
 
         /// Map to maintain our entries.
         map: Map,

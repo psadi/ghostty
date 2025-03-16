@@ -46,13 +46,13 @@ pub fn Reader(comptime S: type) type {
         stream_directory_rva: u32,
 
         const SourceCallable = switch (@typeInfo(Source)) {
-            .Pointer => |v| v.child,
-            .Struct => Source,
+            .pointer => |v| v.child,
+            .@"struct" => Source,
             else => @compileError("Source type must be a pointer or struct"),
         };
 
-        const SourceReader = @typeInfo(@TypeOf(SourceCallable.reader)).Fn.return_type.?;
-        const SourceSeeker = @typeInfo(@TypeOf(SourceCallable.seekableStream)).Fn.return_type.?;
+        const SourceReader = @typeInfo(@TypeOf(SourceCallable.reader)).@"fn".return_type.?;
+        const SourceSeeker = @typeInfo(@TypeOf(SourceCallable.seekableStream)).@"fn".return_type.?;
 
         /// A limited reader for reading data from the source.
         pub const LimitedReader = std.io.LimitedReader(SourceReader);

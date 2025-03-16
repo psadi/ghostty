@@ -38,13 +38,13 @@ test {
     const cs = try graphics.ColorSpace.createDeviceGray();
     defer cs.release();
     const ctx = try BitmapContext.create(null, 80, 80, 8, 80, cs, 0);
-    defer ctx.release();
-
-    ctx.setShouldAntialias(true);
-    ctx.setShouldSmoothFonts(false);
-    ctx.setGrayFillColor(1, 1);
-    ctx.setGrayStrokeColor(1, 1);
-    ctx.setTextDrawingMode(.fill);
-    ctx.setTextMatrix(graphics.AffineTransform.identity());
-    ctx.setTextPosition(0, 0);
+    const context = BitmapContext.context;
+    defer context.release(ctx);
+    context.setShouldAntialias(ctx, true);
+    context.setShouldSmoothFonts(ctx, false);
+    context.setGrayFillColor(ctx, 1, 1);
+    context.setGrayStrokeColor(ctx, 1, 1);
+    context.setTextDrawingMode(ctx, .fill);
+    context.setTextMatrix(ctx, graphics.AffineTransform.identity());
+    context.setTextPosition(ctx, 0, 0);
 }

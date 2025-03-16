@@ -40,7 +40,13 @@ pub fn build(b: *std.Build) !void {
             .@"enable-libpng" = true,
         });
         lib.linkLibrary(freetype.artifact("freetype"));
-        module.addIncludePath(freetype.builder.dependency("freetype", .{}).path("include"));
+
+        if (freetype.builder.lazyDependency(
+            "freetype",
+            .{},
+        )) |freetype_dep| {
+            module.addIncludePath(freetype_dep.path("include"));
+        }
     }
 
     lib.addIncludePath(imgui.path(""));
@@ -76,9 +82,9 @@ pub fn build(b: *std.Build) !void {
         .flags = flags.items,
     });
 
-    if (target.result.isDarwin()) {
+    if (target.result.os.tag.isDarwin()) {
         if (!target.query.isNative()) {
-            try @import("apple_sdk").addPaths(b, &lib.root_module);
+            try @import("apple_sdk").addPaths(b, lib.root_module);
             try @import("apple_sdk").addPaths(b, module);
         }
         lib.addCSourceFile(.{

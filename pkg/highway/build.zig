@@ -21,9 +21,9 @@ pub fn build(b: *std.Build) !void {
     lib.addIncludePath(upstream.path(""));
     module.addIncludePath(upstream.path(""));
 
-    if (target.result.isDarwin()) {
+    if (target.result.os.tag.isDarwin()) {
         const apple_sdk = @import("apple_sdk");
-        try apple_sdk.addPaths(b, &lib.root_module);
+        try apple_sdk.addPaths(b, lib.root_module);
         try apple_sdk.addPaths(b, module);
     }
 
@@ -76,6 +76,7 @@ pub fn build(b: *std.Build) !void {
         .root = upstream.path(""),
         .flags = flags.items,
         .files = &.{
+            "hwy/abort.cc",
             "hwy/aligned_allocator.cc",
             "hwy/nanobenchmark.cc",
             "hwy/per_target.cc",

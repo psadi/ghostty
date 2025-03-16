@@ -1,3 +1,1 @@
-pub const c = @cImport({
-    @cInclude("Carbon/Carbon.h");
-});
+pub const c = @import("../main.zig").c;

@@ -84,7 +84,6 @@ fn buildLib(b: *std.Build, module: *std.Build.Module, options: anytype) !*std.Bu
         .@"enable-libpng" = true,
     });
 
-    const upstream = b.dependency("harfbuzz", .{});
     const lib = b.addStaticLibrary(.{
         .name = "harfbuzz",
         .target = target,
@@ -92,11 +91,9 @@ fn buildLib(b: *std.Build, module: *std.Build.Module, options: anytype) !*std.Bu
     });
     lib.linkLibC();
     lib.linkLibCpp();
-    lib.addIncludePath(upstream.path("src"));
-    module.addIncludePath(upstream.path("src"));
 
-    if (target.result.isDarwin()) {
-        try apple_sdk.addPaths(b, &lib.root_module);
+    if (target.result.os.tag.isDarwin()) {
+        try apple_sdk.addPaths(b, lib.root_module);
         try apple_sdk.addPaths(b, module);
     }
 
@@ -133,7 +130,13 @@ fn buildLib(b: *std.Build, module: *std.Build.Module, options: anytype) !*std.Bu
             module.linkSystemLibrary("freetype2", dynamic_link_opts);
         } else {
             lib.linkLibrary(freetype.artifact("freetype"));
-            module.addIncludePath(freetype.builder.dependency("freetype", .{}).path("include"));
+
+            if (freetype.builder.lazyDependency(
+                "freetype",
+                .{},
+            )) |freetype_dep| {
+                module.addIncludePath(freetype_dep.path("include"));
+            }
         }
     }
 
@@ -143,15 +146,19 @@ fn buildLib(b: *std.Build, module: *std.Build.Module, options: anytype) !*std.Bu
         module.linkFramework("CoreText", .{});
     }
 
-    lib.addCSourceFile(.{
-        .file = upstream.path("src/harfbuzz.cc"),
-        .flags = flags.items,
-    });
-    lib.installHeadersDirectory(
-        upstream.path("src"),
-        "",
-        .{ .include_extensions = &.{".h"} },
-    );
+    if (b.lazyDependency("harfbuzz", .{})) |upstream| {
+        lib.addIncludePath(upstream.path("src"));
+        module.addIncludePath(upstream.path("src"));
+        lib.addCSourceFile(.{
+            .file = upstream.path("src/harfbuzz.cc"),
+            .flags = flags.items,
+        });
+        lib.installHeadersDirectory(
+            upstream.path("src"),
+            "",
+            .{ .include_extensions = &.{".h"} },
+        );
+    }
 
     b.installArtifact(lib);
 

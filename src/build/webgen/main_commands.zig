@@ -8,7 +8,7 @@ pub fn main() !void {
 }
 
 // Note: as a shortcut for defining inline editOnGithubLinks per cli action the user
-// is directed to the folder view on Github. This includes a README pointing them to 
+// is directed to the folder view on Github. This includes a README pointing them to
 // the files to edit.
 pub fn genActions(writer: anytype) !void {
     // Write the header
@@ -24,7 +24,7 @@ pub fn genActions(writer: anytype) !void {
         \\
     );
 
-    inline for (@typeInfo(Action).Enum.fields) |field| {
+    inline for (@typeInfo(Action).@"enum".fields) |field| {
         const action = std.meta.stringToEnum(Action, field.name).?;
 
         switch (action) {

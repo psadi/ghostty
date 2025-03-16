@@ -1531,7 +1531,7 @@ test "kitty: left shift with report all" {
 }
 
 test "kitty: report associated with alt text on macOS with option" {
-    if (comptime !builtin.target.isDarwin()) return error.SkipZigTest;
+    if (comptime !builtin.target.os.tag.isDarwin()) return error.SkipZigTest;
 
     var buf: [128]u8 = undefined;
     var enc: KeyEncoder = .{
@@ -1555,7 +1555,7 @@ test "kitty: report associated with alt text on macOS with option" {
 }
 
 test "kitty: report associated with alt text on macOS with alt" {
-    if (comptime !builtin.target.isDarwin()) return error.SkipZigTest;
+    if (comptime !builtin.target.os.tag.isDarwin()) return error.SkipZigTest;
 
     {
         // With Alt modifier
@@ -1826,7 +1826,7 @@ test "legacy: alt+e only unshifted" {
 }
 
 test "legacy: alt+x macos" {
-    if (comptime !builtin.target.isDarwin()) return error.SkipZigTest;
+    if (comptime !builtin.target.os.tag.isDarwin()) return error.SkipZigTest;
 
     var buf: [128]u8 = undefined;
     var enc: KeyEncoder = .{
@@ -1845,7 +1845,7 @@ test "legacy: alt+x macos" {
 }
 
 test "legacy: shift+alt+. macos" {
-    if (comptime !builtin.target.isDarwin()) return error.SkipZigTest;
+    if (comptime !builtin.target.os.tag.isDarwin()) return error.SkipZigTest;
 
     var buf: [128]u8 = undefined;
     var enc: KeyEncoder = .{

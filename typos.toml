@@ -1,5 +1,9 @@
 [files]
 extend-exclude = [
+  # Build
+  "build.zig.zon",
+  "build.zig.zon.nix",
+  "build.zig.zon2json-lock",
   # vendored code
   "vendor/*",
   "pkg/*",
@@ -44,6 +48,10 @@ grey = "gray"
 greyscale = "grayscale"
 DECID = "DECID"
 flate = "flate"
+
+[type.po]
+extend-glob = ["*.po"]
+check-file = false
 
 [type.swift.extend-words]
 inout = "inout"

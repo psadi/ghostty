@@ -21,7 +21,7 @@ pub fn ensureLocale(alloc: std.mem.Allocator) !void {
     // When launching the .app, LANG is not set so we must query it from the
     // OS. When launching from the CLI, LANG is usually set by the parent
     // process.
-    if (comptime builtin.target.isDarwin()) {
+    if (comptime builtin.target.os.tag.isDarwin()) {
         // Set the lang if it is not set or if its empty.
         if (lang == null or lang.?.value.len == 0) {
             setLangFromCocoa();

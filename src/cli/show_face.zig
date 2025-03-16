@@ -101,7 +101,7 @@ fn runArgs(alloc_gpa: Allocator, argsIter: anytype) !u8 {
         var exit: bool = false;
         outer: for (opts._diagnostics.items()) |diagnostic| {
             if (diagnostic.location != .cli) continue :outer;
-            inner: inline for (@typeInfo(Options).Struct.fields) |field| {
+            inner: inline for (@typeInfo(Options).@"struct".fields) |field| {
                 if (field.name[0] == '_') continue :inner;
                 if (std.mem.eql(u8, field.name, diagnostic.key)) {
                     try stderr.writeAll("config error: ");
@@ -134,7 +134,7 @@ fn runArgs(alloc_gpa: Allocator, argsIter: anytype) !u8 {
     // action-specific argument.
     if (!config._diagnostics.empty()) {
         outer: for (config._diagnostics.items()) |diagnostic| {
-            inner: inline for (@typeInfo(Options).Struct.fields) |field| {
+            inner: inline for (@typeInfo(Options).@"struct".fields) |field| {
                 if (field.name[0] == '_') continue :inner;
                 if (std.mem.eql(u8, field.name, diagnostic.key) and (diagnostic.location == .none or diagnostic.location == .cli)) continue :outer;
             }

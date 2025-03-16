@@ -639,11 +639,11 @@ pub const PresentationMode = union(enum) {
 /// the Backing type and everything should just work fine.
 pub const Index = packed struct(Index.Backing) {
     const Backing = u16;
-    const backing_bits = @typeInfo(Backing).Int.bits;
+    const backing_bits = @typeInfo(Backing).int.bits;
 
     /// The number of bits we use for the index.
-    const idx_bits = backing_bits - @typeInfo(@typeInfo(Style).Enum.tag_type).Int.bits;
-    pub const IndexInt = @Type(.{ .Int = .{ .signedness = .unsigned, .bits = idx_bits } });
+    const idx_bits = backing_bits - @typeInfo(@typeInfo(Style).@"enum".tag_type).int.bits;
+    pub const IndexInt = @Type(.{ .int = .{ .signedness = .unsigned, .bits = idx_bits } });
 
     /// The special-case fonts that we support.
     pub const Special = enum(IndexInt) {

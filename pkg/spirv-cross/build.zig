@@ -42,9 +42,9 @@ fn buildSpirvCross(
     });
     lib.linkLibC();
     lib.linkLibCpp();
-    if (target.result.isDarwin()) {
+    if (target.result.os.tag.isDarwin()) {
         const apple_sdk = @import("apple_sdk");
-        try apple_sdk.addPaths(b, &lib.root_module);
+        try apple_sdk.addPaths(b, lib.root_module);
     }
 
     var flags = std.ArrayList([]const u8).init(b.allocator);

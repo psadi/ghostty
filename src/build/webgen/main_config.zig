@@ -29,7 +29,7 @@ pub fn genConfig(writer: anytype) !void {
     );
 
     @setEvalBranchQuota(50_000);
-    const fields = @typeInfo(Config).Struct.fields;
+    const fields = @typeInfo(Config).@"struct".fields;
     inline for (fields, 0..) |field, i| {
         if (field.name[0] == '_') continue;
         if (!@hasDecl(help_strings.Config, field.name)) continue;

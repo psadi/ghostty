@@ -10,7 +10,8 @@ pub const rlimit = if (@hasDecl(posix.system, "rlimit")) posix.rlimit else struc
 /// need to do this because each window consumes at least a handful of fds.
 /// This is extracted from the Zig compiler source code.
 pub fn fixMaxFiles() ?rlimit {
-    if (!@hasDecl(posix.system, "rlimit")) return null;
+    if (!@hasDecl(posix.system, "rlimit") or
+        posix.system.rlimit == void) return null;
 
     const old = posix.getrlimit(.NOFILE) catch {
         log.warn("failed to query file handle limit, may limit max windows", .{});
@@ -59,7 +60,7 @@ pub fn allocTmpDir(allocator: std.mem.Allocator) ?[]const u8 {
     if (builtin.os.tag == .windows) {
         // TODO: what is a good fallback path on windows?
         const v = std.process.getenvW(std.unicode.utf8ToUtf16LeStringLiteral("TMP")) orelse return null;
-        return std.unicode.utf16leToUtf8Alloc(allocator, v) catch |e| {
+        return std.unicode.utf16LeToUtf8Alloc(allocator, v) catch |e| {
             log.warn("failed to convert temp dir path from windows string: {}", .{e});
             return null;
         };

@@ -8,7 +8,7 @@ pub const map = colorMap() catch @compileError("failed to parse rgb.txt");
 pub const ColorMap = std.StaticStringMapWithEql(RGB, std.static_string_map.eqlAsciiIgnoreCase);
 
 fn colorMap() !ColorMap {
-    @setEvalBranchQuota(100_000);
+    @setEvalBranchQuota(500_000);
 
     const KV = struct { []const u8, RGB };
 

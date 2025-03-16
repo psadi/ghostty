@@ -10,7 +10,7 @@ const log = std.log.scoped(.passwd);
 
 // We want to be extra sure since this will force bad symbols into our import table
 comptime {
-    if (builtin.target.isWasm()) {
+    if (builtin.target.cpu.arch.isWasm()) {
         @compileError("passwd is not available for wasm");
     }
 }
@@ -116,7 +116,7 @@ pub fn get(alloc: Allocator) !Entry {
         };
 
         // Shell and home are the last two entries
-        var it = std.mem.splitBackwards(u8, std.mem.trimRight(u8, output, " \r\n"), ":");
+        var it = std.mem.splitBackwardsScalar(u8, std.mem.trimRight(u8, output, " \r\n"), ':');
         result.shell = it.next() orelse null;
         result.home = it.next() orelse null;
         return result;

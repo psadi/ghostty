@@ -195,7 +195,7 @@ pub fn translate(
     } else false;
 
     // Convert the utf16 to utf8
-    const len = try std.unicode.utf16leToUtf8(out, char[0..char_count]);
+    const len = try std.unicode.utf16LeToUtf8(out, char[0..char_count]);
     return .{
         .text = out[0..len],
         .composing = composing,

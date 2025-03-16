@@ -75,7 +75,7 @@ pub const Coordinate = union(enum) {
     terminal: Terminal,
     grid: Grid,
 
-    pub const Tag = @typeInfo(Coordinate).Union.tag_type.?;
+    pub const Tag = @typeInfo(Coordinate).@"union".tag_type.?;
     pub const Surface = struct { x: f64, y: f64 };
     pub const Terminal = struct { x: f64, y: f64 };
     pub const Grid = struct { x: GridSize.Unit, y: GridSize.Unit };

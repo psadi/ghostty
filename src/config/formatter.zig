@@ -42,27 +42,27 @@ pub fn formatEntry(
     writer: anytype,
 ) !void {
     switch (@typeInfo(T)) {
-        .Bool, .Int => {
+        .bool, .int => {
             try writer.print("{s} = {}\n", .{ name, value });
             return;
         },
 
-        .Float => {
+        .float => {
             try writer.print("{s} = {d}\n", .{ name, value });
             return;
         },
 
-        .Enum => {
+        .@"enum" => {
             try writer.print("{s} = {s}\n", .{ name, @tagName(value) });
             return;
         },
 
-        .Void => {
+        .void => {
             try writer.print("{s} = \n", .{name});
             return;
         },
 
-        .Optional => |info| {
+        .optional => |info| {
             if (value) |inner| {
                 try formatEntry(
                     info.child,
@@ -77,7 +77,7 @@ pub fn formatEntry(
             return;
         },
 
-        .Pointer => switch (T) {
+        .pointer => switch (T) {
             []const u8,
             [:0]const u8,
             => {
@@ -93,7 +93,7 @@ pub fn formatEntry(
         // This is given the formatter in use so that they can
         // call BACK to our formatEntry to write each primitive
         // value.
-        .Struct => |info| if (@hasDecl(T, "formatEntry")) {
+        .@"struct" => |info| if (@hasDecl(T, "formatEntry")) {
             try value.formatEntry(entryFormatter(name, writer));
             return;
         } else switch (info.layout) {
@@ -114,7 +114,7 @@ pub fn formatEntry(
             else => {},
         },
 
-        .Union => if (@hasDecl(T, "formatEntry")) {
+        .@"union" => if (@hasDecl(T, "formatEntry")) {
             try value.formatEntry(entryFormatter(name, writer));
             return;
         },
@@ -158,7 +158,7 @@ pub const FileFormatter = struct {
             null;
         defer if (default) |*v| v.deinit();
 
-        inline for (@typeInfo(Config).Struct.fields) |field| {
+        inline for (@typeInfo(Config).@"struct".fields) |field| {
             if (field.name[0] == '_') continue;
 
             const value = @field(self.config, field.name);

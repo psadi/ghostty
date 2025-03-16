@@ -1,10 +1,12 @@
 .{
-    .name = "libxml2",
+    .name = .libxml2,
     .version = "2.11.5",
+    .fingerprint = 0xf268267b0b8b040d,
+    .paths = .{""},
     .dependencies = .{
         .libxml2 = .{
-            .url = "https://github.com/GNOME/libxml2/archive/refs/tags/v2.11.5.tar.gz",
-            .hash = "122032442d95c3b428ae8e526017fad881e7dc78eab4d558e9a58a80bfbd65a64f7d",
+            .url = "https://deps.files.ghostty.org/libxml2-2.11.5.tar.gz",
+            .hash = "N-V-__8AAG3RoQEyRC2Vw7Qoro5SYBf62IHn3HjqtNVY6aWK",
         },
     },
 }

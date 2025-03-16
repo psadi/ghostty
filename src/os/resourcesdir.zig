@@ -46,7 +46,7 @@ pub fn resourcesDir(alloc: std.mem.Allocator) !?[]const u8 {
         exe = dir;
 
         // On MacOS, we look for the app bundle path.
-        if (comptime builtin.target.isDarwin()) {
+        if (comptime builtin.target.os.tag.isDarwin()) {
             if (try maybeDir(&dir_buf, dir, "Contents/Resources", sentinel)) |v| {
                 return try std.fs.path.join(alloc, &.{ v, "ghostty" });
             }

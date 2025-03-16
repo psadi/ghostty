@@ -30,7 +30,7 @@ pub const Library = library.Library;
 
 // If we're targeting wasm then we export some wasm APIs.
 comptime {
-    if (builtin.target.isWasm()) {
+    if (builtin.target.cpu.arch.isWasm()) {
         _ = Atlas.Wasm;
         _ = DeferredFace.Wasm;
         _ = face.web_canvas.Wasm;
@@ -45,7 +45,7 @@ pub const options: struct {
     // TODO: we need to modify the build config for wasm builds. the issue
     // is we're sharing the build config options between all exes in build.zig.
     // We need to construct it per target.
-    .backend = if (builtin.target.isWasm()) .web_canvas else build_config.font_backend,
+    .backend = if (builtin.target.cpu.arch.isWasm()) .web_canvas else build_config.font_backend,
 };
 
 pub const Backend = enum {
@@ -91,7 +91,7 @@ pub const Backend = enum {
         // macOS also supports "coretext_freetype" but there is no scenario
         // that is the default. It is only used by people who want to
         // self-compile Ghostty and prefer the freetype aesthetic.
-        return if (target.isDarwin()) .coretext else .fontconfig_freetype;
+        return if (target.os.tag.isDarwin()) .coretext else .fontconfig_freetype;
     }
 
     // All the functions below can be called at comptime or runtime to
@@ -176,7 +176,7 @@ pub const sprite_index = Collection.Index.initSpecial(.sprite);
 
 test {
     // For non-wasm we want to test everything we can
-    if (!comptime builtin.target.isWasm()) {
+    if (!comptime builtin.target.cpu.arch.isWasm()) {
         @import("std").testing.refAllDecls(@This());
         return;
     }

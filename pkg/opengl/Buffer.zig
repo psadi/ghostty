@@ -115,12 +115,12 @@ pub const Binding = struct {
         ptr: *const anyopaque,
     } {
         return switch (@typeInfo(@TypeOf(data))) {
-            .Pointer => |ptr| switch (ptr.size) {
-                .One => .{
+            .pointer => |ptr| switch (ptr.size) {
+                .one => .{
                     .size = @sizeOf(ptr.child),
                     .ptr = data,
                 },
-                .Slice => .{
+                .slice => .{
                     .size = @intCast(@sizeOf(ptr.child) * data.len),
                     .ptr = data.ptr,
                 },

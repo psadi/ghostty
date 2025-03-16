@@ -193,11 +193,11 @@ fn startPosix(self: *Command, arena: Allocator) !void {
 }
 
 fn startWindows(self: *Command, arena: Allocator) !void {
-    const application_w = try std.unicode.utf8ToUtf16LeWithNull(arena, self.path);
-    const cwd_w = if (self.cwd) |cwd| try std.unicode.utf8ToUtf16LeWithNull(arena, cwd) else null;
+    const application_w = try std.unicode.utf8ToUtf16LeAllocZ(arena, self.path);
+    const cwd_w = if (self.cwd) |cwd| try std.unicode.utf8ToUtf16LeAllocZ(arena, cwd) else null;
     const command_line_w = if (self.args.len > 0) b: {
         const command_line = try windowsCreateCommandLine(arena, self.args);
-        break :b try std.unicode.utf8ToUtf16LeWithNull(arena, command_line);
+        break :b try std.unicode.utf8ToUtf16LeAllocZ(arena, command_line);
     } else null;
     const env_w = if (self.env) |env_map| try createWindowsEnvBlock(arena, env_map) else null;
 
@@ -392,7 +392,7 @@ pub fn expandPath(alloc: Allocator, cmd: []const u8) !?[]u8 {
     const PATH = switch (builtin.os.tag) {
         .windows => blk: {
             const win_path = std.process.getenvW(std.unicode.utf8ToUtf16LeStringLiteral("PATH")) orelse return null;
-            const path = try std.unicode.utf16leToUtf8Alloc(alloc, win_path);
+            const path = try std.unicode.utf16LeToUtf8Alloc(alloc, win_path);
             break :blk path;
         },
         else => std.posix.getenvZ("PATH") orelse return null,

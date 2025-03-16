@@ -3,7 +3,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Inspector = @import("../inspector/main.zig").Inspector;
-const terminal = @import("../terminal/main.zig");
+const terminalpkg = @import("../terminal/main.zig");
 const inputpkg = @import("../input.zig");
 const renderer = @import("../renderer.zig");
 
@@ -14,7 +14,7 @@ const renderer = @import("../renderer.zig");
 mutex: *std.Thread.Mutex,
 
 /// The terminal data.
-terminal: *terminal.Terminal,
+terminal: *terminalpkg.Terminal,
 
 /// The terminal inspector, if any. This will be null while the inspector
 /// is not active and will be set when it is active.
@@ -34,7 +34,7 @@ pub const Mouse = struct {
     /// The point on the viewport where the mouse currently is. We use
     /// viewport points to avoid the complexity of mapping the mouse to
     /// the renderer state.
-    point: ?terminal.point.Coordinate = null,
+    point: ?terminalpkg.point.Coordinate = null,
 
     /// The mods that are currently active for the last mouse event.
     /// This could really just be mods in general and we probably will
@@ -80,11 +80,11 @@ pub const Preedit = struct {
     /// into the available space.
     pub fn range(
         self: *const Preedit,
-        start: terminal.size.CellCountInt,
-        max: terminal.size.CellCountInt,
+        start: terminalpkg.size.CellCountInt,
+        max: terminalpkg.size.CellCountInt,
     ) struct {
-        start: terminal.size.CellCountInt,
-        end: terminal.size.CellCountInt,
+        start: terminalpkg.size.CellCountInt,
+        end: terminalpkg.size.CellCountInt,
         cp_offset: usize,
     } {
         // If our width is greater than the number of cells we have
@@ -96,7 +96,7 @@ pub const Preedit = struct {
 
             // Rebuild our width in reverse order. This is because we want
             // to offset by the end cells, not the start cells (if we have to).
-            var w: terminal.size.CellCountInt = 0;
+            var w: terminalpkg.size.CellCountInt = 0;
             for (0..self.codepoints.len) |i| {
                 const reverse_i = self.codepoints.len - i - 1;
                 const cp = self.codepoints[reverse_i];

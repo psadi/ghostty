@@ -120,7 +120,7 @@ fn isMouseModeOverrideState(mods: input.Mods) bool {
 /// Returns true if our modifiers put us in a state where dragging
 /// should cause a rectangle select.
 pub fn isRectangleSelectState(mods: input.Mods) bool {
-    return if (comptime builtin.target.isDarwin())
+    return if (comptime builtin.target.os.tag.isDarwin())
         mods.alt
     else
         mods.ctrlOrSuper() and mods.alt;

@@ -1,0 +1,15 @@
+.{
+    .name = .glfw,
+    .version = "3.4.0",
+    .fingerprint = 0x3bbe0a5c667e2c62,
+    .paths = .{""},
+    .dependencies = .{
+        .glfw = .{
+            .url = "https://github.com/glfw/glfw/archive/73948e6c0f15b1053cf74b7c4e6b04fd36e97e29.zip",
+            .hash = "N-V-__8AADTkRwBjUvVwTLOnV96QhN0J5Nyg7YzvnISe-Eax",
+            .lazy = true,
+        },
+
+        .apple_sdk = .{ .path = "../apple-sdk" },
+    },
+}

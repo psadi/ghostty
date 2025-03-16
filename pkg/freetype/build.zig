@@ -61,20 +61,17 @@ fn buildLib(b: *std.Build, module: *std.Build.Module, options: anytype) !*std.Bu
 
     const libpng_enabled = options.libpng_enabled;
 
-    const upstream = b.dependency("freetype", .{});
     const lib = b.addStaticLibrary(.{
         .name = "freetype",
         .target = target,
         .optimize = optimize,
     });
     lib.linkLibC();
-    lib.addIncludePath(upstream.path("include"));
-    if (target.result.isDarwin()) {
+    if (target.result.os.tag.isDarwin()) {
         const apple_sdk = @import("apple_sdk");
-        try apple_sdk.addPaths(b, &lib.root_module);
+        try apple_sdk.addPaths(b, lib.root_module);
     }
 
-    module.addIncludePath(upstream.path("include"));
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
     try flags.appendSlice(&.{
@@ -114,48 +111,52 @@ fn buildLib(b: *std.Build, module: *std.Build.Module, options: anytype) !*std.Bu
         }
     }
 
-    lib.addCSourceFiles(.{
-        .root = upstream.path(""),
-        .files = srcs,
-        .flags = flags.items,
-    });
+    if (b.lazyDependency("freetype", .{})) |upstream| {
+        lib.addIncludePath(upstream.path("include"));
+        module.addIncludePath(upstream.path("include"));
+        lib.addCSourceFiles(.{
+            .root = upstream.path(""),
+            .files = srcs,
+            .flags = flags.items,
+        });
 
-    switch (target.result.os.tag) {
-        .linux => lib.addCSourceFile(.{
-            .file = upstream.path("builds/unix/ftsystem.c"),
-            .flags = flags.items,
-        }),
-        .windows => lib.addCSourceFile(.{
-            .file = upstream.path("builds/windows/ftsystem.c"),
-            .flags = flags.items,
-        }),
-        else => lib.addCSourceFile(.{
-            .file = upstream.path("src/base/ftsystem.c"),
-            .flags = flags.items,
-        }),
-    }
-    switch (target.result.os.tag) {
-        .windows => {
-            lib.addCSourceFile(.{
-                .file = upstream.path("builds/windows/ftdebug.c"),
+        switch (target.result.os.tag) {
+            .linux => lib.addCSourceFile(.{
+                .file = upstream.path("builds/unix/ftsystem.c"),
                 .flags = flags.items,
-            });
-            lib.addWin32ResourceFile(.{
-                .file = upstream.path("src/base/ftver.rc"),
-            });
-        },
-        else => lib.addCSourceFile(.{
-            .file = upstream.path("src/base/ftdebug.c"),
-            .flags = flags.items,
-        }),
-    }
+            }),
+            .windows => lib.addCSourceFile(.{
+                .file = upstream.path("builds/windows/ftsystem.c"),
+                .flags = flags.items,
+            }),
+            else => lib.addCSourceFile(.{
+                .file = upstream.path("src/base/ftsystem.c"),
+                .flags = flags.items,
+            }),
+        }
+        switch (target.result.os.tag) {
+            .windows => {
+                lib.addCSourceFile(.{
+                    .file = upstream.path("builds/windows/ftdebug.c"),
+                    .flags = flags.items,
+                });
+                lib.addWin32ResourceFile(.{
+                    .file = upstream.path("src/base/ftver.rc"),
+                });
+            },
+            else => lib.addCSourceFile(.{
+                .file = upstream.path("src/base/ftdebug.c"),
+                .flags = flags.items,
+            }),
+        }
 
-    lib.installHeader(b.path("freetype-zig.h"), "freetype-zig.h");
-    lib.installHeadersDirectory(
-        upstream.path("include"),
-        "",
-        .{ .include_extensions = &.{".h"} },
-    );
+        lib.installHeader(b.path("freetype-zig.h"), "freetype-zig.h");
+        lib.installHeadersDirectory(
+            upstream.path("include"),
+            "",
+            .{ .include_extensions = &.{".h"} },
+        );
+    }
 
     b.installArtifact(lib);
 

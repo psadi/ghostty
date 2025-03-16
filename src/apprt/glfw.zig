@@ -25,9 +25,13 @@ const Config = @import("../config.zig").Config;
 
 // Get native API access on certain platforms so we can do more customization.
 const glfwNative = glfw.Native(.{
-    .cocoa = builtin.target.isDarwin(),
+    .cocoa = builtin.target.os.tag.isDarwin(),
     .x11 = builtin.os.tag == .linux,
 });
+
+/// True if darwin-specific logic is enabled
+const darwin_enabled = builtin.target.os.tag.isDarwin() and
+    build_config.artifact == .exe;
 
 const log = std.log.scoped(.glfw);
 
@@ -40,12 +44,12 @@ pub const App = struct {
     quit: bool = false,
 
     /// Mac-specific state.
-    darwin: if (Darwin.enabled) Darwin else void,
+    darwin: if (darwin_enabled) Darwin else void,
 
     pub const Options = struct {};
 
     pub fn init(core_app: *CoreApp, _: Options) !App {
-        if (comptime builtin.target.isDarwin()) {
+        if (comptime builtin.target.os.tag.isDarwin()) {
             log.warn("WARNING WARNING WARNING: GLFW ON MAC HAS BUGS.", .{});
             log.warn("You should use the AppKit-based app instead. The official download", .{});
             log.warn("is properly built and available from GitHub. If you're building from", .{});
@@ -66,8 +70,8 @@ pub const App = struct {
         glfw.setErrorCallback(glfwErrorCallback);
 
         // Mac-specific state. For example, on Mac we enable window tabbing.
-        var darwin = if (Darwin.enabled) try Darwin.init() else {};
-        errdefer if (Darwin.enabled) darwin.deinit();
+        var darwin = if (darwin_enabled) try Darwin.init() else {};
+        errdefer if (darwin_enabled) darwin.deinit();
 
         // Load our configuration
         var config = try Config.load(core_app.alloc);
@@ -338,7 +342,7 @@ pub const App = struct {
 
     /// Create a new tab in the parent surface.
     fn newTab(self: *App, parent_: ?*CoreSurface) !void {
-        if (!Darwin.enabled) {
+        if (comptime !darwin_enabled) {
             log.warn("tabbing is not supported on this platform", .{});
             return;
         }
@@ -439,8 +443,6 @@ pub const App = struct {
     /// Mac and the artifact is a standalone exe. We don't target libs because
     /// the embedded API doesn't do windowing.
     const Darwin = struct {
-        const enabled = builtin.target.isDarwin() and build_config.artifact == .exe;
-
         tabbing_id: *macos.foundation.String,
 
         pub fn init() !Darwin {
@@ -554,7 +556,7 @@ pub const Surface = struct {
         }
 
         // On Mac, enable window tabbing
-        if (App.Darwin.enabled) {
+        if (comptime darwin_enabled) {
             const NSWindowTabbingMode = enum(usize) { automatic = 0, preferred = 1, disallowed = 2 };
             const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(win).?);
 
@@ -630,7 +632,7 @@ pub const Surface = struct {
         // Clean up our core surface so that all the rendering and IO stop.
         self.core_surface.deinit();
 
-        if (App.Darwin.enabled) {
+        if (comptime darwin_enabled) {
             const nswindow = objc.Object.fromId(glfwNative.getCocoaWindow(self.window).?);
             const tabgroup = nswindow.getProperty(objc.Object, "tabGroup");
             const windows = tabgroup.getProperty(objc.Object, "windows");
@@ -767,7 +769,7 @@ pub const Surface = struct {
 
     /// Set the shape of the cursor.
     fn setMouseShape(self: *Surface, shape: terminal.MouseShape) !void {
-        if ((comptime builtin.target.isDarwin()) and
+        if ((comptime builtin.target.os.tag.isDarwin()) and
             !internal_os.macos.isAtLeastVersion(13, 0, 0))
         {
             // We only set our cursor if we're NOT on Mac, or if we are then the
@@ -925,7 +927,7 @@ pub const Surface = struct {
 
         // On macOS we need to also disable some modifiers because
         // alt+key consumes the alt.
-        if (comptime builtin.target.isDarwin()) {
+        if (comptime builtin.target.os.tag.isDarwin()) {
             // For GLFW, we say we always consume alt because
             // GLFW doesn't have a way to disable the alt key.
             key_event.consumed_mods.alt = true;

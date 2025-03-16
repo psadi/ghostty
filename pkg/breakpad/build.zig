@@ -4,85 +4,85 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const upstream = b.dependency("breakpad", .{});
-
     const lib = b.addStaticLibrary(.{
         .name = "breakpad",
         .target = target,
         .optimize = optimize,
     });
     lib.linkLibCpp();
-    lib.addIncludePath(upstream.path("src"));
     lib.addIncludePath(b.path("vendor"));
-    if (target.result.isDarwin()) {
+    if (target.result.os.tag.isDarwin()) {
         const apple_sdk = @import("apple_sdk");
-        try apple_sdk.addPaths(b, &lib.root_module);
+        try apple_sdk.addPaths(b, lib.root_module);
     }
 
     var flags = std.ArrayList([]const u8).init(b.allocator);
     defer flags.deinit();
     try flags.appendSlice(&.{});
 
-    lib.addCSourceFiles(.{
-        .root = upstream.path(""),
-        .files = common,
-        .flags = flags.items,
-    });
-
-    if (target.result.isDarwin()) {
+    if (b.lazyDependency("breakpad", .{})) |upstream| {
+        lib.addIncludePath(upstream.path("src"));
         lib.addCSourceFiles(.{
             .root = upstream.path(""),
-            .files = common_apple,
-            .flags = flags.items,
-        });
-        lib.addCSourceFiles(.{
-            .root = upstream.path(""),
-            .files = client_apple,
+            .files = common,
             .flags = flags.items,
         });
 
-        switch (target.result.os.tag) {
-            .macos => {
-                lib.addCSourceFiles(.{
-                    .root = upstream.path(""),
-                    .files = common_mac,
-                    .flags = flags.items,
-                });
-                lib.addCSourceFiles(.{
-                    .root = upstream.path(""),
-                    .files = client_mac,
-                    .flags = flags.items,
-                });
-            },
-
-            .ios => lib.addCSourceFiles(.{
+        if (target.result.os.tag.isDarwin()) {
+            lib.addCSourceFiles(.{
                 .root = upstream.path(""),
-                .files = client_ios,
+                .files = common_apple,
                 .flags = flags.items,
-            }),
+            });
+            lib.addCSourceFiles(.{
+                .root = upstream.path(""),
+                .files = client_apple,
+                .flags = flags.items,
+            });
 
-            else => {},
+            switch (target.result.os.tag) {
+                .macos => {
+                    lib.addCSourceFiles(.{
+                        .root = upstream.path(""),
+                        .files = common_mac,
+                        .flags = flags.items,
+                    });
+                    lib.addCSourceFiles(.{
+                        .root = upstream.path(""),
+                        .files = client_mac,
+                        .flags = flags.items,
+                    });
+                },
+
+                .ios => lib.addCSourceFiles(.{
+                    .root = upstream.path(""),
+                    .files = client_ios,
+                    .flags = flags.items,
+                }),
+
+                else => {},
+            }
         }
-    }
 
-    if (target.result.os.tag == .linux) {
-        lib.addCSourceFiles(.{
-            .root = upstream.path(""),
-            .files = common_linux,
-            .flags = flags.items,
-        });
-        lib.addCSourceFiles(.{
-            .root = upstream.path(""),
-            .files = client_linux,
-            .flags = flags.items,
-        });
-    }
+        if (target.result.os.tag == .linux) {
+            lib.addCSourceFiles(.{
+                .root = upstream.path(""),
+                .files = common_linux,
+                .flags = flags.items,
+            });
+            lib.addCSourceFiles(.{
+                .root = upstream.path(""),
+                .files = client_linux,
+                .flags = flags.items,
+            });
+        }
 
-    lib.installHeadersDirectory(
-        upstream.path("src"),
-        "",
-        .{ .include_extensions = &.{".h"} },
-    );
+        lib.installHeadersDirectory(
+            upstream.path("src"),
+            "",
+            .{ .include_extensions = &.{".h"} },
+        );
+    }
 
     b.installArtifact(lib);
 }

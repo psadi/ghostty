@@ -280,7 +280,8 @@ test {
         const cs = try graphics.ColorSpace.createDeviceGray();
         defer cs.release();
         const ctx = try graphics.BitmapContext.create(null, 80, 80, 8, 80, cs, 0);
-        defer ctx.release();
+        const context = graphics.BitmapContext.context;
+        defer context.release(ctx);
 
         var pos = [_]graphics.Point{.{ .x = 0, .y = 0 }};
         font.drawGlyphs(

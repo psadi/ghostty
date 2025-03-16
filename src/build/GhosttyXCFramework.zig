@@ -32,6 +32,13 @@ pub fn init(b: *std.Build, deps: *const SharedDeps) !GhosttyXCFramework {
             .os_tag = .ios,
             .os_version_min = Config.osVersionMin(.ios),
             .abi = .simulator,
+
+            // We force the Apple CPU model because the simulator
+            // doesn't support the generic CPU model as of Zig 0.14 due
+            // to missing "altnzcv" instructions, which is false. This
+            // surely can't be right but we can fix this if/when we get
+            // back to running simulator builds.
+            .cpu_model = .{ .explicit = &std.Target.aarch64.cpu.apple_a17 },
         }),
     ));
 

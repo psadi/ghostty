@@ -152,7 +152,7 @@ pub const Mods = packed struct(Mods.Backing) {
     pub fn translation(self: Mods, option_as_alt: config.OptionAsAlt) Mods {
         // We currently only process macos-option-as-alt so other
         // platforms don't need to do anything.
-        if (comptime !builtin.target.isDarwin()) return self;
+        if (comptime !builtin.target.os.tag.isDarwin()) return self;
 
         // Alt has to be set only on the correct side
         switch (option_as_alt) {
@@ -170,7 +170,7 @@ pub const Mods = packed struct(Mods.Backing) {
 
     /// Checks to see if super is on (MacOS) or ctrl.
     pub fn ctrlOrSuper(self: Mods) bool {
-        if (comptime builtin.target.isDarwin()) {
+        if (comptime builtin.target.os.tag.isDarwin()) {
             return self.super;
         }
         return self.ctrl;
@@ -187,7 +187,7 @@ pub const Mods = packed struct(Mods.Backing) {
     }
 
     test "translation macos-option-as-alt" {
-        if (comptime !builtin.target.isDarwin()) return error.SkipZigTest;
+        if (comptime !builtin.target.os.tag.isDarwin()) return error.SkipZigTest;
 
         const testing = std.testing;
 
@@ -646,7 +646,7 @@ pub const Key = enum(c_int) {
     /// true if this key is one of the left or right versions of super (MacOS)
     /// or ctrl.
     pub fn ctrlOrSuper(self: Key) bool {
-        if (comptime builtin.target.isDarwin()) {
+        if (comptime builtin.target.os.tag.isDarwin()) {
             return self == .left_super or self == .right_super;
         }
         return self == .left_control or self == .right_control;
@@ -757,7 +757,7 @@ pub const Key = enum(c_int) {
 /// non-Mac we default to ctrl (i.e. ctrl+c for copy).
 pub fn ctrlOrSuper(mods: Mods) Mods {
     var copy = mods;
-    if (comptime builtin.target.isDarwin()) {
+    if (comptime builtin.target.os.tag.isDarwin()) {
         copy.super = true;
     } else {
         copy.ctrl = true;

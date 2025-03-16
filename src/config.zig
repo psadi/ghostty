@@ -34,7 +34,7 @@ pub const WindowPaddingColor = Config.WindowPaddingColor;
 
 // Alternate APIs
 pub const CAPI = @import("config/CAPI.zig");
-pub const Wasm = if (!builtin.target.isWasm()) struct {} else @import("config/Wasm.zig");
+pub const Wasm = if (!builtin.target.cpu.arch.isWasm()) struct {} else @import("config/Wasm.zig");
 
 test {
     @import("std").testing.refAllDecls(@This());

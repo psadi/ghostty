@@ -3,7 +3,7 @@ const builtin = @import("builtin");
 const buildpkg = @import("src/build/main.zig");
 
 comptime {
-    buildpkg.requireZig("0.13.0");
+    buildpkg.requireZig("0.14.0");
 }
 
 pub fn build(b: *std.Build) !void {
@@ -50,7 +50,7 @@ pub fn build(b: *std.Build) !void {
     // As such, these build steps are lacking. For example, the Darwin
     // build only produces an xcframework.
     if (config.app_runtime == .none) {
-        if (config.target.result.isDarwin()) darwin: {
+        if (config.target.result.os.tag.isDarwin()) darwin: {
             if (!config.emit_xcframework) break :darwin;
 
             // Build the xcframework

@@ -57,14 +57,14 @@ pub fn open(
         // 50 KiB is the default value used by std.process.Child.run
         const output_max_size = 50 * 1024;
 
-        var stdout = std.ArrayList(u8).init(alloc);
-        var stderr = std.ArrayList(u8).init(alloc);
+        var stdout: std.ArrayListUnmanaged(u8) = .{};
+        var stderr: std.ArrayListUnmanaged(u8) = .{};
         defer {
-            stdout.deinit();
-            stderr.deinit();
+            stdout.deinit(alloc);
+            stderr.deinit(alloc);
         }
 
-        try exe.collectOutput(&stdout, &stderr, output_max_size);
+        try exe.collectOutput(alloc, &stdout, &stderr, output_max_size);
         _ = try exe.wait();
 
         // If we have any stderr output we log it. This makes it easier for

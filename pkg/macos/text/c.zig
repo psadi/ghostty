@@ -1,3 +1,1 @@
-pub const c = @cImport({
-    @cInclude("CoreText/CoreText.h");
-});
+pub const c = @import("../main.zig").c;

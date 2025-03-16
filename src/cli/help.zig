@@ -58,7 +58,7 @@ pub fn run(alloc: Allocator) !u8 {
         \\
     );
 
-    inline for (@typeInfo(Action).Enum.fields) |field| {
+    inline for (@typeInfo(Action).@"enum".fields) |field| {
         try stdout.print("  +{s}\n", .{field.name});
     }
 

@@ -67,7 +67,7 @@ pub const CellMode = enum(u8) {
         // Since we use bit tricks below, we want to ensure the enum
         // doesn't change without us looking at this logic again.
         comptime {
-            const info = @typeInfo(CellMode).Enum;
+            const info = @typeInfo(CellMode).@"enum";
             std.debug.assert(info.fields.len == 5);
         }
 

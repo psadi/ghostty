@@ -8,7 +8,7 @@ const std = @import("std");
 pub const FlagStack = struct {
     const len = 8;
 
-    flags: [len]Flags = .{.{}} ** len,
+    flags: [len]Flags = .{Flags{}} ** len,
     idx: u3 = 0,
 
     /// Return the current stack value
@@ -51,7 +51,7 @@ pub const FlagStack = struct {
         // could send a huge number of pop commands to waste cpu.
         if (n >= self.flags.len) {
             self.idx = 0;
-            self.flags = .{.{}} ** len;
+            self.flags = .{Flags{}} ** len;
             return;
         }
 

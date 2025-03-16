@@ -1,7 +1,6 @@
 const SharedDeps = @This();
 
 const std = @import("std");
-const Scanner = @import("zig_wayland").Scanner;
 const Config = @import("Config.zig");
 const HelpStrings = @import("HelpStrings.zig");
 const MetallibStep = @import("MetallibStep.zig");
@@ -106,61 +105,72 @@ pub fn add(
     // Freetype
     _ = b.systemIntegrationOption("freetype", .{}); // Shows it in help
     if (self.config.font_backend.hasFreetype()) {
-        const freetype_dep = b.dependency("freetype", .{
+        if (b.lazyDependency("freetype", .{
             .target = target,
             .optimize = optimize,
             .@"enable-libpng" = true,
-        });
-        step.root_module.addImport("freetype", freetype_dep.module("freetype"));
+        })) |freetype_dep| {
+            step.root_module.addImport(
+                "freetype",
+                freetype_dep.module("freetype"),
+            );
 
-        if (b.systemIntegrationOption("freetype", .{})) {
-            step.linkSystemLibrary2("bzip2", dynamic_link_opts);
-            step.linkSystemLibrary2("freetype2", dynamic_link_opts);
-        } else {
-            step.linkLibrary(freetype_dep.artifact("freetype"));
-            try static_libs.append(freetype_dep.artifact("freetype").getEmittedBin());
+            if (b.systemIntegrationOption("freetype", .{})) {
+                step.linkSystemLibrary2("bzip2", dynamic_link_opts);
+                step.linkSystemLibrary2("freetype2", dynamic_link_opts);
+            } else {
+                step.linkLibrary(freetype_dep.artifact("freetype"));
+                try static_libs.append(
+                    freetype_dep.artifact("freetype").getEmittedBin(),
+                );
+            }
         }
     }
 
     // Harfbuzz
     _ = b.systemIntegrationOption("harfbuzz", .{}); // Shows it in help
     if (self.config.font_backend.hasHarfbuzz()) {
-        const harfbuzz_dep = b.dependency("harfbuzz", .{
+        if (b.lazyDependency("harfbuzz", .{
             .target = target,
             .optimize = optimize,
             .@"enable-freetype" = true,
             .@"enable-coretext" = self.config.font_backend.hasCoretext(),
-        });
-
-        step.root_module.addImport(
-            "harfbuzz",
-            harfbuzz_dep.module("harfbuzz"),
-        );
-        if (b.systemIntegrationOption("harfbuzz", .{})) {
-            step.linkSystemLibrary2("harfbuzz", dynamic_link_opts);
-        } else {
-            step.linkLibrary(harfbuzz_dep.artifact("harfbuzz"));
-            try static_libs.append(harfbuzz_dep.artifact("harfbuzz").getEmittedBin());
+        })) |harfbuzz_dep| {
+            step.root_module.addImport(
+                "harfbuzz",
+                harfbuzz_dep.module("harfbuzz"),
+            );
+            if (b.systemIntegrationOption("harfbuzz", .{})) {
+                step.linkSystemLibrary2("harfbuzz", dynamic_link_opts);
+            } else {
+                step.linkLibrary(harfbuzz_dep.artifact("harfbuzz"));
+                try static_libs.append(
+                    harfbuzz_dep.artifact("harfbuzz").getEmittedBin(),
+                );
+            }
         }
     }
 
     // Fontconfig
     _ = b.systemIntegrationOption("fontconfig", .{}); // Shows it in help
     if (self.config.font_backend.hasFontconfig()) {
-        const fontconfig_dep = b.dependency("fontconfig", .{
+        if (b.lazyDependency("fontconfig", .{
             .target = target,
             .optimize = optimize,
-        });
-        step.root_module.addImport(
-            "fontconfig",
-            fontconfig_dep.module("fontconfig"),
-        );
+        })) |fontconfig_dep| {
+            step.root_module.addImport(
+                "fontconfig",
+                fontconfig_dep.module("fontconfig"),
+            );
 
-        if (b.systemIntegrationOption("fontconfig", .{})) {
-            step.linkSystemLibrary2("fontconfig", dynamic_link_opts);
-        } else {
-            step.linkLibrary(fontconfig_dep.artifact("fontconfig"));
-            try static_libs.append(fontconfig_dep.artifact("fontconfig").getEmittedBin());
+            if (b.systemIntegrationOption("fontconfig", .{})) {
+                step.linkSystemLibrary2("fontconfig", dynamic_link_opts);
+            } else {
+                step.linkLibrary(fontconfig_dep.artifact("fontconfig"));
+                try static_libs.append(
+                    fontconfig_dep.artifact("fontconfig").getEmittedBin(),
+                );
+            }
         }
     }
 
@@ -169,105 +179,142 @@ pub fn add(
     // libs list if we're not using system integration. The dependencies
     // will handle linking it.
     if (!b.systemIntegrationOption("libpng", .{})) {
-        const libpng_dep = b.dependency("libpng", .{
+        if (b.lazyDependency("libpng", .{
             .target = target,
             .optimize = optimize,
-        });
-        step.linkLibrary(libpng_dep.artifact("png"));
-        try static_libs.append(libpng_dep.artifact("png").getEmittedBin());
+        })) |libpng_dep| {
+            step.linkLibrary(libpng_dep.artifact("png"));
+            try static_libs.append(
+                libpng_dep.artifact("png").getEmittedBin(),
+            );
+        }
     }
 
     // Zlib - same as libpng, only used through dependencies.
     if (!b.systemIntegrationOption("zlib", .{})) {
-        const zlib_dep = b.dependency("zlib", .{
+        if (b.lazyDependency("zlib", .{
             .target = target,
             .optimize = optimize,
-        });
-        step.linkLibrary(zlib_dep.artifact("z"));
-        try static_libs.append(zlib_dep.artifact("z").getEmittedBin());
+        })) |zlib_dep| {
+            step.linkLibrary(zlib_dep.artifact("z"));
+            try static_libs.append(
+                zlib_dep.artifact("z").getEmittedBin(),
+            );
+        }
     }
 
     // Oniguruma
-    const oniguruma_dep = b.dependency("oniguruma", .{
+    if (b.lazyDependency("oniguruma", .{
         .target = target,
         .optimize = optimize,
-    });
-    step.root_module.addImport("oniguruma", oniguruma_dep.module("oniguruma"));
-    if (b.systemIntegrationOption("oniguruma", .{})) {
-        step.linkSystemLibrary2("oniguruma", dynamic_link_opts);
-    } else {
-        step.linkLibrary(oniguruma_dep.artifact("oniguruma"));
-        try static_libs.append(oniguruma_dep.artifact("oniguruma").getEmittedBin());
+    })) |oniguruma_dep| {
+        step.root_module.addImport(
+            "oniguruma",
+            oniguruma_dep.module("oniguruma"),
+        );
+        if (b.systemIntegrationOption("oniguruma", .{})) {
+            step.linkSystemLibrary2("oniguruma", dynamic_link_opts);
+        } else {
+            step.linkLibrary(oniguruma_dep.artifact("oniguruma"));
+            try static_libs.append(
+                oniguruma_dep.artifact("oniguruma").getEmittedBin(),
+            );
+        }
     }
 
     // Glslang
-    const glslang_dep = b.dependency("glslang", .{
+    if (b.lazyDependency("glslang", .{
         .target = target,
         .optimize = optimize,
-    });
-    step.root_module.addImport("glslang", glslang_dep.module("glslang"));
-    if (b.systemIntegrationOption("glslang", .{})) {
-        step.linkSystemLibrary2("glslang", dynamic_link_opts);
-        step.linkSystemLibrary2("glslang-default-resource-limits", dynamic_link_opts);
-    } else {
-        step.linkLibrary(glslang_dep.artifact("glslang"));
-        try static_libs.append(glslang_dep.artifact("glslang").getEmittedBin());
+    })) |glslang_dep| {
+        step.root_module.addImport("glslang", glslang_dep.module("glslang"));
+        if (b.systemIntegrationOption("glslang", .{})) {
+            step.linkSystemLibrary2("glslang", dynamic_link_opts);
+            step.linkSystemLibrary2(
+                "glslang-default-resource-limits",
+                dynamic_link_opts,
+            );
+        } else {
+            step.linkLibrary(glslang_dep.artifact("glslang"));
+            try static_libs.append(
+                glslang_dep.artifact("glslang").getEmittedBin(),
+            );
+        }
     }
 
     // Spirv-cross
-    const spirv_cross_dep = b.dependency("spirv_cross", .{
+    if (b.lazyDependency("spirv_cross", .{
         .target = target,
         .optimize = optimize,
-    });
-    step.root_module.addImport("spirv_cross", spirv_cross_dep.module("spirv_cross"));
-    if (b.systemIntegrationOption("spirv-cross", .{})) {
-        step.linkSystemLibrary2("spirv-cross", dynamic_link_opts);
-    } else {
-        step.linkLibrary(spirv_cross_dep.artifact("spirv_cross"));
-        try static_libs.append(spirv_cross_dep.artifact("spirv_cross").getEmittedBin());
+    })) |spirv_cross_dep| {
+        step.root_module.addImport(
+            "spirv_cross",
+            spirv_cross_dep.module("spirv_cross"),
+        );
+        if (b.systemIntegrationOption("spirv-cross", .{})) {
+            step.linkSystemLibrary2("spirv-cross", dynamic_link_opts);
+        } else {
+            step.linkLibrary(spirv_cross_dep.artifact("spirv_cross"));
+            try static_libs.append(
+                spirv_cross_dep.artifact("spirv_cross").getEmittedBin(),
+            );
+        }
     }
 
     // Simdutf
     if (b.systemIntegrationOption("simdutf", .{})) {
         step.linkSystemLibrary2("simdutf", dynamic_link_opts);
     } else {
-        const simdutf_dep = b.dependency("simdutf", .{
+        if (b.lazyDependency("simdutf", .{
             .target = target,
             .optimize = optimize,
-        });
-        step.linkLibrary(simdutf_dep.artifact("simdutf"));
-        try static_libs.append(simdutf_dep.artifact("simdutf").getEmittedBin());
+        })) |simdutf_dep| {
+            step.linkLibrary(simdutf_dep.artifact("simdutf"));
+            try static_libs.append(
+                simdutf_dep.artifact("simdutf").getEmittedBin(),
+            );
+        }
     }
 
     // Sentry
     if (self.config.sentry) {
-        const sentry_dep = b.dependency("sentry", .{
+        if (b.lazyDependency("sentry", .{
             .target = target,
             .optimize = optimize,
             .backend = .breakpad,
-        });
+        })) |sentry_dep| {
+            step.root_module.addImport(
+                "sentry",
+                sentry_dep.module("sentry"),
+            );
+            step.linkLibrary(sentry_dep.artifact("sentry"));
+            try static_libs.append(
+                sentry_dep.artifact("sentry").getEmittedBin(),
+            );
 
-        step.root_module.addImport("sentry", sentry_dep.module("sentry"));
-
-        // Sentry
-        step.linkLibrary(sentry_dep.artifact("sentry"));
-        try static_libs.append(sentry_dep.artifact("sentry").getEmittedBin());
-
-        // We also need to include breakpad in the static libs.
-        const breakpad_dep = sentry_dep.builder.dependency("breakpad", .{
-            .target = target,
-            .optimize = optimize,
-        });
-        try static_libs.append(breakpad_dep.artifact("breakpad").getEmittedBin());
+            // We also need to include breakpad in the static libs.
+            if (sentry_dep.builder.lazyDependency("breakpad", .{
+                .target = target,
+                .optimize = optimize,
+            })) |breakpad_dep| {
+                try static_libs.append(
+                    breakpad_dep.artifact("breakpad").getEmittedBin(),
+                );
+            }
+        }
     }
 
     // Wasm we do manually since it is such a different build.
     if (step.rootModuleTarget().cpu.arch == .wasm32) {
-        const js_dep = b.dependency("zig_js", .{
+        if (b.lazyDependency("zig_js", .{
             .target = target,
             .optimize = optimize,
-        });
-        step.root_module.addImport("zig-js", js_dep.module("zig-js"));
+        })) |js_dep| {
+            step.root_module.addImport(
+                "zig-js",
+                js_dep.module("zig-js"),
+            );
+        }
 
         return static_libs;
     }
@@ -277,7 +324,10 @@ pub fn add(
     // on x86_64.
     if (step.rootModuleTarget().os.tag == .linux) {
         const triple = try step.rootModuleTarget().linuxTriple(b.allocator);
-        step.addLibraryPath(.{ .cwd_relative = b.fmt("/usr/lib/{s}", .{triple}) });
+        const path = b.fmt("/usr/lib/{s}", .{triple});
+        if (std.fs.accessAbsolute(path, .{})) {
+            step.addLibraryPath(.{ .cwd_relative = path });
+        } else |_| {}
     }
 
     // C files
@@ -320,8 +370,8 @@ pub fn add(
 
     // We always require the system SDK so that our system headers are available.
     // This makes things like `os/log.h` available for cross-compiling.
-    if (step.rootModuleTarget().isDarwin()) {
-        try @import("apple_sdk").addPaths(b, &step.root_module);
+    if (step.rootModuleTarget().os.tag.isDarwin()) {
+        try @import("apple_sdk").addPaths(b, step.root_module);
 
         const metallib = self.metallib.?;
         metallib.output.addStepDependencies(&step.step);
@@ -331,52 +381,72 @@ pub fn add(
     }
 
     // Other dependencies, mostly pure Zig
-    step.root_module.addImport("opengl", b.dependency(
-        "opengl",
-        .{},
-    ).module("opengl"));
-    step.root_module.addImport("vaxis", b.dependency("vaxis", .{
+    if (b.lazyDependency("opengl", .{})) |dep| {
+        step.root_module.addImport("opengl", dep.module("opengl"));
+    }
+    if (b.lazyDependency("vaxis", .{})) |dep| {
+        step.root_module.addImport("vaxis", dep.module("vaxis"));
+    }
+    if (b.lazyDependency("wuffs", .{
         .target = target,
         .optimize = optimize,
-    }).module("vaxis"));
-    step.root_module.addImport("wuffs", b.dependency("wuffs", .{
+    })) |dep| {
+        step.root_module.addImport("wuffs", dep.module("wuffs"));
+    }
+    if (b.lazyDependency("libxev", .{
         .target = target,
         .optimize = optimize,
-    }).module("wuffs"));
-    step.root_module.addImport("xev", b.dependency("libxev", .{
+    })) |dep| {
+        step.root_module.addImport("xev", dep.module("xev"));
+    }
+    if (b.lazyDependency("z2d", .{})) |dep| {
+        step.root_module.addImport("z2d", b.addModule("z2d", .{
+            .root_source_file = dep.path("src/z2d.zig"),
+            .target = target,
+            .optimize = optimize,
+        }));
+    }
+    if (b.lazyDependency("ziglyph", .{
         .target = target,
         .optimize = optimize,
-    }).module("xev"));
-    step.root_module.addImport("z2d", b.addModule("z2d", .{
-        .root_source_file = b.dependency("z2d", .{}).path("src/z2d.zig"),
-        .target = target,
-        .optimize = optimize,
-    }));
-    step.root_module.addImport("ziglyph", b.dependency("ziglyph", .{
-        .target = target,
-        .optimize = optimize,
-    }).module("ziglyph"));
-    step.root_module.addImport("zf", b.dependency("zf", .{
+    })) |dep| {
+        step.root_module.addImport("ziglyph", dep.module("ziglyph"));
+    }
+    if (b.lazyDependency("zf", .{
         .target = target,
         .optimize = optimize,
         .with_tui = false,
-    }).module("zf"));
+    })) |dep| {
+        step.root_module.addImport("zf", dep.module("zf"));
+    }
 
     // Mac Stuff
-    if (step.rootModuleTarget().isDarwin()) {
-        const objc_dep = b.dependency("zig_objc", .{
+    if (step.rootModuleTarget().os.tag.isDarwin()) {
+        if (b.lazyDependency("zig_objc", .{
             .target = target,
             .optimize = optimize,
-        });
-        const macos_dep = b.dependency("macos", .{
-            .target = target,
-            .optimize = optimize,
-        });
+        })) |objc_dep| {
+            step.root_module.addImport(
+                "objc",
+                objc_dep.module("objc"),
+            );
+        }
 
-        step.root_module.addImport("objc", objc_dep.module("objc"));
-        step.root_module.addImport("macos", macos_dep.module("macos"));
-        step.linkLibrary(macos_dep.artifact("macos"));
-        try static_libs.append(macos_dep.artifact("macos").getEmittedBin());
+        if (b.lazyDependency("macos", .{
+            .target = target,
+            .optimize = optimize,
+        })) |macos_dep| {
+            step.root_module.addImport(
+                "macos",
+                macos_dep.module("macos"),
+            );
+            step.linkLibrary(
+                macos_dep.artifact("macos"),
+            );
+            try static_libs.append(
+                macos_dep.artifact("macos").getEmittedBin(),
+            );
+        }
 
         if (self.config.renderer == .opengl) {
             step.linkFramework("OpenGL");
@@ -386,38 +456,44 @@ pub fn add(
         // This is LGPL but since our source code is open source we are
         // in compliance with the LGPL since end users can modify this
         // build script to replace the bundled libintl with their own.
-        const libintl_dep = b.dependency("libintl", .{
+        if (b.lazyDependency("libintl", .{
             .target = target,
             .optimize = optimize,
-        });
-        step.linkLibrary(libintl_dep.artifact("intl"));
-        try static_libs.append(libintl_dep.artifact("intl").getEmittedBin());
+        })) |libintl_dep| {
+            step.linkLibrary(libintl_dep.artifact("intl"));
+            try static_libs.append(
+                libintl_dep.artifact("intl").getEmittedBin(),
+            );
+        }
     }
 
     // cimgui
-    const cimgui_dep = b.dependency("cimgui", .{
+    if (b.lazyDependency("cimgui", .{
         .target = target,
         .optimize = optimize,
-    });
-    step.root_module.addImport("cimgui", cimgui_dep.module("cimgui"));
-    step.linkLibrary(cimgui_dep.artifact("cimgui"));
-    try static_libs.append(cimgui_dep.artifact("cimgui").getEmittedBin());
+    })) |cimgui_dep| {
+        step.root_module.addImport("cimgui", cimgui_dep.module("cimgui"));
+        step.linkLibrary(cimgui_dep.artifact("cimgui"));
+        try static_libs.append(cimgui_dep.artifact("cimgui").getEmittedBin());
+    }
 
     // Highway
-    const highway_dep = b.dependency("highway", .{
+    if (b.lazyDependency("highway", .{
         .target = target,
         .optimize = optimize,
-    });
-    step.linkLibrary(highway_dep.artifact("highway"));
-    try static_libs.append(highway_dep.artifact("highway").getEmittedBin());
+    })) |highway_dep| {
+        step.linkLibrary(highway_dep.artifact("highway"));
+        try static_libs.append(highway_dep.artifact("highway").getEmittedBin());
+    }
 
     // utfcpp - This is used as a dependency on our hand-written C++ code
-    const utfcpp_dep = b.dependency("utfcpp", .{
+    if (b.lazyDependency("utfcpp", .{
         .target = target,
         .optimize = optimize,
-    });
-    step.linkLibrary(utfcpp_dep.artifact("utfcpp"));
-    try static_libs.append(utfcpp_dep.artifact("utfcpp").getEmittedBin());
+    })) |utfcpp_dep| {
+        step.linkLibrary(utfcpp_dep.artifact("utfcpp"));
+        try static_libs.append(utfcpp_dep.artifact("utfcpp").getEmittedBin());
+    }
 
     // If we're building an exe then we have additional dependencies.
     if (step.kind != .lib) {
@@ -435,180 +511,17 @@ pub fn add(
         switch (self.config.app_runtime) {
             .none => {},
 
-            .glfw => glfw: {
-                const mach_glfw_dep = b.lazyDependency("mach_glfw", .{
-                    .target = target,
-                    .optimize = optimize,
-                }) orelse break :glfw;
-                step.root_module.addImport("glfw", mach_glfw_dep.module("mach-glfw"));
+            .glfw => if (b.lazyDependency("glfw", .{
+                .target = target,
+                .optimize = optimize,
+            })) |glfw_dep| {
+                step.root_module.addImport(
+                    "glfw",
+                    glfw_dep.module("glfw"),
+                );
             },
 
-            .gtk => {
-                const gobject = b.dependency("gobject", .{
-                    .target = target,
-                    .optimize = optimize,
-                });
-                const gobject_imports = .{
-                    .{ "gobject", "gobject2" },
-                    .{ "gio", "gio2" },
-                    .{ "glib", "glib2" },
-                    .{ "gtk", "gtk4" },
-                    .{ "gdk", "gdk4" },
-                    .{ "adw", "adw1" },
-                };
-                inline for (gobject_imports) |import| {
-                    const name, const module = import;
-                    step.root_module.addImport(name, gobject.module(module));
-                }
-
-                step.linkSystemLibrary2("gtk4", dynamic_link_opts);
-                step.linkSystemLibrary2("libadwaita-1", dynamic_link_opts);
-
-                if (self.config.x11) {
-                    step.linkSystemLibrary2("X11", dynamic_link_opts);
-                    step.root_module.addImport("gdk_x11", gobject.module("gdkx114"));
-                }
-
-                if (self.config.wayland) {
-                    const scanner = Scanner.create(b.dependency("zig_wayland", .{}), .{
-                        .wayland_xml = b.dependency("wayland", .{}).path("protocol/wayland.xml"),
-                        .wayland_protocols = b.dependency("wayland_protocols", .{}).path(""),
-                    });
-
-                    const wayland = b.createModule(.{ .root_source_file = scanner.result });
-
-                    const plasma_wayland_protocols = b.dependency("plasma_wayland_protocols", .{
-                        .target = target,
-                        .optimize = optimize,
-                    });
-
-                    // FIXME: replace with `zxdg_decoration_v1` once GTK merges https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/6398
-                    scanner.addCustomProtocol(plasma_wayland_protocols.path("src/protocols/blur.xml"));
-                    scanner.addCustomProtocol(plasma_wayland_protocols.path("src/protocols/server-decoration.xml"));
-                    scanner.addCustomProtocol(plasma_wayland_protocols.path("src/protocols/slide.xml"));
-
-                    scanner.generate("wl_compositor", 1);
-                    scanner.generate("org_kde_kwin_blur_manager", 1);
-                    scanner.generate("org_kde_kwin_server_decoration_manager", 1);
-                    scanner.generate("org_kde_kwin_slide_manager", 1);
-
-                    step.root_module.addImport("wayland", wayland);
-                    step.root_module.addImport("gdk_wayland", gobject.module("gdkwayland4"));
-
-                    const gtk4_layer_shell = b.dependency("gtk4_layer_shell", .{
-                        .target = target,
-                        .optimize = optimize,
-                    });
-                    const layer_shell_module = gtk4_layer_shell.module("gtk4-layer-shell");
-                    layer_shell_module.addImport("gtk", gobject.module("gtk4"));
-                    step.root_module.addImport("gtk4-layer-shell", layer_shell_module);
-
-                    // IMPORTANT: gtk4-layer-shell must be linked BEFORE
-                    // wayland-client, as it relies on shimming libwayland's APIs.
-                    if (b.systemIntegrationOption("gtk4-layer-shell", .{})) {
-                        step.linkSystemLibrary2("gtk4-layer-shell-0", dynamic_link_opts);
-                    } else {
-                        // gtk4-layer-shell *must* be dynamically linked,
-                        // so we don't add it as a static library
-                        step.linkLibrary(gtk4_layer_shell.artifact("gtk4-layer-shell"));
-                    }
-
-                    step.linkSystemLibrary2("wayland-client", dynamic_link_opts);
-                }
-
-                {
-                    const gresource = @import("../apprt/gtk/gresource.zig");
-
-                    const gresource_xml = gresource_xml: {
-                        const generate_gresource_xml = b.addExecutable(.{
-                            .name = "generate_gresource_xml",
-                            .root_source_file = b.path("src/apprt/gtk/gresource.zig"),
-                            .target = b.host,
-                        });
-
-                        const generate = b.addRunArtifact(generate_gresource_xml);
-
-                        const gtk_blueprint_compiler = b.addExecutable(.{
-                            .name = "gtk_blueprint_compiler",
-                            .root_source_file = b.path("src/apprt/gtk/blueprint_compiler.zig"),
-                            .target = b.host,
-                        });
-                        gtk_blueprint_compiler.linkSystemLibrary2("gtk4", dynamic_link_opts);
-                        gtk_blueprint_compiler.linkSystemLibrary2("libadwaita-1", dynamic_link_opts);
-                        gtk_blueprint_compiler.linkLibC();
-
-                        for (gresource.blueprint_files) |blueprint_file| {
-                            const blueprint_compiler = b.addRunArtifact(gtk_blueprint_compiler);
-                            blueprint_compiler.addArgs(&.{
-                                b.fmt("{d}", .{blueprint_file.major}),
-                                b.fmt("{d}", .{blueprint_file.minor}),
-                            });
-                            const ui_file = blueprint_compiler.addOutputFileArg(b.fmt(
-                                "{d}.{d}/{s}.ui",
-                                .{
-                                    blueprint_file.major,
-                                    blueprint_file.minor,
-                                    blueprint_file.name,
-                                },
-                            ));
-                            blueprint_compiler.addFileArg(b.path(b.fmt(
-                                "src/apprt/gtk/ui/{d}.{d}/{s}.blp",
-                                .{
-                                    blueprint_file.major,
-                                    blueprint_file.minor,
-                                    blueprint_file.name,
-                                },
-                            )));
-                            generate.addFileArg(ui_file);
-                        }
-
-                        break :gresource_xml generate.captureStdOut();
-                    };
-
-                    {
-                        const gtk_builder_check = b.addExecutable(.{
-                            .name = "gtk_builder_check",
-                            .root_source_file = b.path("src/apprt/gtk/builder_check.zig"),
-                            .target = b.host,
-                        });
-                        gtk_builder_check.root_module.addOptions("build_options", self.options);
-                        gtk_builder_check.root_module.addImport("gtk", gobject.module("gtk4"));
-                        gtk_builder_check.root_module.addImport("adw", gobject.module("adw1"));
-
-                        for (gresource.dependencies) |pathname| {
-                            const extension = std.fs.path.extension(pathname);
-                            if (!std.mem.eql(u8, extension, ".ui")) continue;
-                            const check = b.addRunArtifact(gtk_builder_check);
-                            check.addFileArg(b.path(pathname));
-                            step.step.dependOn(&check.step);
-                        }
-                    }
-
-                    const generate_resources_c = b.addSystemCommand(&.{
-                        "glib-compile-resources",
-                        "--c-name",
-                        "ghostty",
-                        "--generate-source",
-                        "--target",
-                    });
-                    const ghostty_resources_c = generate_resources_c.addOutputFileArg("ghostty_resources.c");
-                    generate_resources_c.addFileArg(gresource_xml);
-                    generate_resources_c.extra_file_dependencies = &gresource.dependencies;
-                    step.addCSourceFile(.{ .file = ghostty_resources_c, .flags = &.{} });
-
-                    const generate_resources_h = b.addSystemCommand(&.{
-                        "glib-compile-resources",
-                        "--c-name",
-                        "ghostty",
-                        "--generate-header",
-                        "--target",
-                    });
-                    const ghostty_resources_h = generate_resources_h.addOutputFileArg("ghostty_resources.h");
-                    generate_resources_h.addFileArg(gresource_xml);
-                    generate_resources_h.extra_file_dependencies = &gresource.dependencies;
-                    step.addIncludePath(ghostty_resources_h.dirname());
-                }
-            },
+            .gtk => try self.addGTK(step),
         }
     }
 
@@ -617,6 +530,231 @@ pub fn add(
     self.framedata.addImport(step);
 
     return static_libs;
+}
+
+/// Setup the dependencies for the GTK apprt build. The GTK apprt
+/// is particularly involved compared to others so we pull this out
+/// into a dedicated function.
+fn addGTK(
+    self: *const SharedDeps,
+    step: *std.Build.Step.Compile,
+) !void {
+    const b = step.step.owner;
+    const target = step.root_module.resolved_target.?;
+    const optimize = step.root_module.optimize.?;
+
+    const gobject_ = b.lazyDependency("gobject", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    if (gobject_) |gobject| {
+        const gobject_imports = .{
+            .{ "adw", "adw1" },
+            .{ "gdk", "gdk4" },
+            .{ "gio", "gio2" },
+            .{ "glib", "glib2" },
+            .{ "gobject", "gobject2" },
+            .{ "gtk", "gtk4" },
+        };
+        inline for (gobject_imports) |import| {
+            const name, const module = import;
+            step.root_module.addImport(name, gobject.module(module));
+        }
+    }
+
+    step.linkSystemLibrary2("gtk4", dynamic_link_opts);
+    step.linkSystemLibrary2("libadwaita-1", dynamic_link_opts);
+
+    if (self.config.x11) {
+        step.linkSystemLibrary2("X11", dynamic_link_opts);
+        if (gobject_) |gobject| {
+            step.root_module.addImport(
+                "gdk_x11",
+                gobject.module("gdkx114"),
+            );
+        }
+    }
+
+    if (self.config.wayland) wayland: {
+        // These need to be all be called to note that we need them.
+        const wayland_dep_ = b.lazyDependency("wayland", .{});
+        const wayland_protocols_dep_ = b.lazyDependency(
+            "wayland_protocols",
+            .{},
+        );
+        const plasma_wayland_protocols_dep_ = b.lazyDependency(
+            "plasma_wayland_protocols",
+            .{},
+        );
+
+        // Unwrap or return, there are no more dependencies below.
+        const wayland_dep = wayland_dep_ orelse break :wayland;
+        const wayland_protocols_dep = wayland_protocols_dep_ orelse break :wayland;
+        const plasma_wayland_protocols_dep = plasma_wayland_protocols_dep_ orelse break :wayland;
+
+        // Note that zig_wayland cannot be lazy because lazy dependencies
+        // can't be imported since they don't exist and imports are
+        // resolved at compile time of the build.
+        const zig_wayland_dep = b.dependency("zig_wayland", .{});
+        const Scanner = @import("zig_wayland").Scanner;
+        const scanner = Scanner.create(zig_wayland_dep.builder, .{
+            .wayland_xml = wayland_dep.path("protocol/wayland.xml"),
+            .wayland_protocols = wayland_protocols_dep.path(""),
+        });
+
+        // FIXME: replace with `zxdg_decoration_v1` once GTK merges https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/6398
+        scanner.addCustomProtocol(
+            plasma_wayland_protocols_dep.path("src/protocols/blur.xml"),
+        );
+        scanner.addCustomProtocol(
+            plasma_wayland_protocols_dep.path("src/protocols/server-decoration.xml"),
+        );
+        scanner.addCustomProtocol(
+            plasma_wayland_protocols_dep.path("src/protocols/slide.xml"),
+        );
+
+        scanner.generate("wl_compositor", 1);
+        scanner.generate("org_kde_kwin_blur_manager", 1);
+        scanner.generate("org_kde_kwin_server_decoration_manager", 1);
+        scanner.generate("org_kde_kwin_slide_manager", 1);
+
+        step.root_module.addImport("wayland", b.createModule(.{
+            .root_source_file = scanner.result,
+        }));
+        if (gobject_) |gobject| step.root_module.addImport(
+            "gdk_wayland",
+            gobject.module("gdkwayland4"),
+        );
+
+        if (b.lazyDependency("gtk4_layer_shell", .{
+            .target = target,
+            .optimize = optimize,
+        })) |gtk4_layer_shell| {
+            const layer_shell_module = gtk4_layer_shell.module("gtk4-layer-shell");
+            if (gobject_) |gobject| layer_shell_module.addImport(
+                "gtk",
+                gobject.module("gtk4"),
+            );
+            step.root_module.addImport(
+                "gtk4-layer-shell",
+                layer_shell_module,
+            );
+
+            // IMPORTANT: gtk4-layer-shell must be linked BEFORE
+            // wayland-client, as it relies on shimming libwayland's APIs.
+            if (b.systemIntegrationOption("gtk4-layer-shell", .{})) {
+                step.linkSystemLibrary2(
+                    "gtk4-layer-shell-0",
+                    dynamic_link_opts,
+                );
+            } else {
+                // gtk4-layer-shell *must* be dynamically linked,
+                // so we don't add it as a static library
+                step.linkLibrary(gtk4_layer_shell.artifact("gtk4-layer-shell"));
+            }
+        }
+
+        step.linkSystemLibrary2("wayland-client", dynamic_link_opts);
+    }
+
+    {
+        const gresource = @import("../apprt/gtk/gresource.zig");
+
+        const gresource_xml = gresource_xml: {
+            const generate_gresource_xml = b.addExecutable(.{
+                .name = "generate_gresource_xml",
+                .root_source_file = b.path("src/apprt/gtk/gresource.zig"),
+                .target = b.graph.host,
+            });
+
+            const generate = b.addRunArtifact(generate_gresource_xml);
+
+            const gtk_blueprint_compiler = b.addExecutable(.{
+                .name = "gtk_blueprint_compiler",
+                .root_source_file = b.path("src/apprt/gtk/blueprint_compiler.zig"),
+                .target = b.graph.host,
+            });
+            gtk_blueprint_compiler.linkSystemLibrary2("gtk4", dynamic_link_opts);
+            gtk_blueprint_compiler.linkSystemLibrary2("libadwaita-1", dynamic_link_opts);
+            gtk_blueprint_compiler.linkLibC();
+
+            for (gresource.blueprint_files) |blueprint_file| {
+                const blueprint_compiler = b.addRunArtifact(gtk_blueprint_compiler);
+                blueprint_compiler.addArgs(&.{
+                    b.fmt("{d}", .{blueprint_file.major}),
+                    b.fmt("{d}", .{blueprint_file.minor}),
+                });
+                const ui_file = blueprint_compiler.addOutputFileArg(b.fmt(
+                    "{d}.{d}/{s}.ui",
+                    .{
+                        blueprint_file.major,
+                        blueprint_file.minor,
+                        blueprint_file.name,
+                    },
+                ));
+                blueprint_compiler.addFileArg(b.path(b.fmt(
+                    "src/apprt/gtk/ui/{d}.{d}/{s}.blp",
+                    .{
+                        blueprint_file.major,
+                        blueprint_file.minor,
+                        blueprint_file.name,
+                    },
+                )));
+                generate.addFileArg(ui_file);
+            }
+
+            break :gresource_xml generate.captureStdOut();
+        };
+
+        {
+            const gtk_builder_check = b.addExecutable(.{
+                .name = "gtk_builder_check",
+                .root_source_file = b.path("src/apprt/gtk/builder_check.zig"),
+                .target = b.graph.host,
+            });
+            gtk_builder_check.root_module.addOptions("build_options", self.options);
+            if (gobject_) |gobject| {
+                gtk_builder_check.root_module.addImport(
+                    "gtk",
+                    gobject.module("gtk4"),
+                );
+                gtk_builder_check.root_module.addImport(
+                    "adw",
+                    gobject.module("adw1"),
+                );
+            }
+
+            for (gresource.dependencies) |pathname| {
+                const extension = std.fs.path.extension(pathname);
+                if (!std.mem.eql(u8, extension, ".ui")) continue;
+                const check = b.addRunArtifact(gtk_builder_check);
+                check.addFileArg(b.path(pathname));
+                step.step.dependOn(&check.step);
+            }
+        }
+
+        const generate_resources_c = b.addSystemCommand(&.{
+            "glib-compile-resources",
+            "--c-name",
+            "ghostty",
+            "--generate-source",
+            "--target",
+        });
+        const ghostty_resources_c = generate_resources_c.addOutputFileArg("ghostty_resources.c");
+        generate_resources_c.addFileArg(gresource_xml);
+        step.addCSourceFile(.{ .file = ghostty_resources_c, .flags = &.{} });
+
+        const generate_resources_h = b.addSystemCommand(&.{
+            "glib-compile-resources",
+            "--c-name",
+            "ghostty",
+            "--generate-header",
+            "--target",
+        });
+        const ghostty_resources_h = generate_resources_h.addOutputFileArg("ghostty_resources.h");
+        generate_resources_h.addFileArg(gresource_xml);
+        step.addIncludePath(ghostty_resources_h.dirname());
+    }
 }
 
 // For dynamic linking, we prefer dynamic linking and to search by

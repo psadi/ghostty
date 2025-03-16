@@ -4,7 +4,7 @@ const builtin = @import("builtin");
 const options = @import("build_options");
 
 comptime {
-    if (!builtin.target.isWasm()) {
+    if (!builtin.target.cpu.arch.isWasm()) {
         @compileError("wasm.zig should only be analyzed for wasm32 builds");
     }
 }
@@ -67,7 +67,7 @@ pub export fn free(ptr: ?[*]u8) void {
 /// to the host.
 pub fn toHostOwned(ptr: anytype) ![*]u8 {
     // Convert our pointer to a byte array
-    const info = @typeInfo(@TypeOf(ptr)).Pointer;
+    const info = @typeInfo(@TypeOf(ptr)).pointer;
     const T = info.child;
     const size = @sizeOf(T);
     const casted = @as([*]u8, @ptrFromInt(@intFromPtr(ptr)));

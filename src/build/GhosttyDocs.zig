@@ -27,7 +27,7 @@ pub fn init(
         const generate_markdown = b.addExecutable(.{
             .name = "mdgen_" ++ manpage.name ++ "_" ++ manpage.section,
             .root_source_file = b.path("src/main.zig"),
-            .target = b.host,
+            .target = b.graph.host,
         });
         deps.help_strings.addImport(generate_markdown);
 

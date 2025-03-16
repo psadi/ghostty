@@ -14,7 +14,7 @@ pub const Request = dsr_enum: {
         };
     }
 
-    break :dsr_enum @Type(.{ .Enum = .{
+    break :dsr_enum @Type(.{ .@"enum" = .{
         .tag_type = Tag.Backing,
         .fields = &fields,
         .decls = &.{},
@@ -27,7 +27,7 @@ pub const Request = dsr_enum: {
 /// chosen somewhat arbitrarily to match the largest expected size
 /// we see as a multiple of 8 bits.
 pub const Tag = packed struct(u16) {
-    pub const Backing = @typeInfo(@This()).Struct.backing_integer.?;
+    pub const Backing = @typeInfo(@This()).@"struct".backing_integer.?;
     value: u15,
     question: bool = false,
 

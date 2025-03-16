@@ -67,7 +67,7 @@ pub const MutableAttributedString = opaque {
     ) void {
         const T = @TypeOf(key);
         const info = @typeInfo(T);
-        const Key = if (info != .Pointer) T else info.Pointer.child;
+        const Key = if (info != .pointer) T else info.pointer.child;
         const key_arg = if (@hasDecl(Key, "key"))
             key.key()
         else

@@ -10,11 +10,12 @@
 /// (event loop) along with any global app state.
 const App = @This();
 
-const gtk = @import("gtk");
+const adw = @import("adw");
+const gdk = @import("gdk");
 const gio = @import("gio");
 const glib = @import("glib");
 const gobject = @import("gobject");
-const adw = @import("adw");
+const gtk = @import("gtk");
 
 const std = @import("std");
 const assert = std.debug.assert;
@@ -43,7 +44,7 @@ const c = @import("c.zig").c;
 const version = @import("version.zig");
 const inspector = @import("inspector.zig");
 const key = @import("key.zig");
-const winproto = @import("winproto.zig");
+const winprotopkg = @import("winproto.zig");
 const testing = std.testing;
 const adwaita = @import("adwaita.zig");
 
@@ -58,13 +59,13 @@ app: *c.GtkApplication,
 ctx: *c.GMainContext,
 
 /// State and logic for the underlying windowing protocol.
-winproto: winproto.App,
+winproto: winprotopkg.App,
 
 /// True if the app was launched with single instance mode.
 single_instance: bool,
 
 /// The "none" cursor. We use one that is shared across the entire app.
-cursor_none: ?*c.GdkCursor,
+cursor_none: ?*gdk.Cursor,
 
 /// The configuration errors window, if it is currently open.
 config_errors_window: ?*ConfigErrorsWindow = null,
@@ -226,7 +227,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         var fmt = std.io.fixedBufferStream(&buf);
         const writer = fmt.writer();
         var first: bool = true;
-        inline for (@typeInfo(@TypeOf(gdk_debug)).Struct.fields) |field| {
+        inline for (@typeInfo(@TypeOf(gdk_debug)).@"struct".fields) |field| {
             if (@field(gdk_debug, field.name)) {
                 if (!first) try writer.writeAll(",");
                 try writer.writeAll(field.name);
@@ -244,7 +245,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
         var fmt = std.io.fixedBufferStream(&buf);
         const writer = fmt.writer();
         var first: bool = true;
-        inline for (@typeInfo(@TypeOf(gdk_disable)).Struct.fields) |field| {
+        inline for (@typeInfo(@TypeOf(gdk_disable)).@"struct".fields) |field| {
             if (@field(gdk_disable, field.name)) {
                 if (!first) try writer.writeAll(",");
                 try writer.writeAll(field.name);
@@ -280,8 +281,8 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     };
 
     // The "none" cursor is used for hiding the cursor
-    const cursor_none = c.gdk_cursor_new_from_name("none", null);
-    errdefer if (cursor_none) |cursor| c.g_object_unref(cursor);
+    const cursor_none = gdk.Cursor.newFromName("none", null);
+    errdefer if (cursor_none) |cursor| cursor.unref();
 
     const single_instance = switch (config.@"gtk-single-instance") {
         .true => true,
@@ -401,7 +402,7 @@ pub fn init(core_app: *CoreApp, opts: Options) !App {
     }
 
     // Setup our windowing protocol logic
-    var winproto_app = try winproto.App.init(
+    var winproto_app = try winprotopkg.App.init(
         core_app.alloc,
         display,
         app_id,

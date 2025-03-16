@@ -67,14 +67,13 @@ pub const SVG = struct {
         // Slow path: binary search our records
         return std.sort.binarySearch(
             [12]u8,
-            glyph_id,
             self.records,
-            {},
+            glyph_id,
             compareGlyphId,
         ) != null;
     }
 
-    fn compareGlyphId(_: void, glyph_id: u16, record: [12]u8) std.math.Order {
+    fn compareGlyphId(glyph_id: u16, record: [12]u8) std.math.Order {
         const start, const end = glyphRange(&record) catch return .lt;
         if (glyph_id < start) {
             return .lt;

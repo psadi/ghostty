@@ -33,7 +33,7 @@ pub const FreetypeLoadFlags = if (options.backend.hasFreetype())
     config.FreetypeLoadFlags
 else
     void;
-pub const freetype_load_flags_default = if (FreetypeLoadFlags != void) .{} else {};
+pub const freetype_load_flags_default: FreetypeLoadFlags = if (FreetypeLoadFlags != void) .{} else {};
 
 /// Options for initializing a font face.
 pub const Options = struct {

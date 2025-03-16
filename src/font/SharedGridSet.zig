@@ -188,7 +188,7 @@ fn collection(
         // A buffer we use to store the font names for logging.
         var name_buf: [256]u8 = undefined;
 
-        inline for (@typeInfo(Style).Enum.fields) |field| {
+        inline for (@typeInfo(Style).@"enum".fields) |field| {
             const style = @field(Style, field.name);
             for (key.descriptorsForStyle(style)) |desc| {
                 {
@@ -297,7 +297,7 @@ fn collection(
     // people add other emoji fonts to their system, we always want to
     // prefer the official one. Users can override this by explicitly
     // specifying a font-family for emoji.
-    if (comptime builtin.target.isDarwin() and Discover != void) apple_emoji: {
+    if (comptime builtin.target.os.tag.isDarwin() and Discover != void) apple_emoji: {
         const disco = try self.discover() orelse break :apple_emoji;
         var disco_it = try disco.discover(self.alloc, .{
             .family = "Apple Color Emoji",
@@ -314,7 +314,7 @@ fn collection(
 
     // Emoji fallback. We don't include this on Mac since Mac is expected
     // to always have the Apple Emoji available on the system.
-    if (comptime !builtin.target.isDarwin() or Discover == void) {
+    if (comptime !builtin.target.os.tag.isDarwin() or Discover == void) {
         _ = try c.add(
             self.alloc,
             .regular,
@@ -672,7 +672,7 @@ pub const Key = struct {
         autoHash(hasher, self.metric_modifiers.count());
         autoHash(hasher, self.freetype_load_flags);
         if (self.metric_modifiers.count() > 0) {
-            inline for (@typeInfo(Metrics.Key).Enum.fields) |field| {
+            inline for (@typeInfo(Metrics.Key).@"enum".fields) |field| {
                 const key = @field(Metrics.Key, field.name);
                 if (self.metric_modifiers.get(key)) |value| {
                     autoHash(hasher, key);

@@ -2241,7 +2241,9 @@ fn draw_branch_node(
 
     var ctx = canvas.getContext() catch return;
     defer ctx.deinit();
-    ctx.setSource(.{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } });
+    ctx.setSource(.{ .opaque_pattern = .{
+        .pixel = .{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } },
+    } });
     ctx.setLineWidth(float_thick);
 
     // These @intFromFloat casts shouldn't ever fail since r can never
@@ -2290,7 +2292,9 @@ fn draw_circle(
 
     var ctx = canvas.getContext() catch return;
     defer ctx.deinit();
-    ctx.setSource(.{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } });
+    ctx.setSource(.{ .opaque_pattern = .{
+        .pixel = .{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } },
+    } });
     ctx.setLineWidth(
         @floatFromInt(Thickness.light.height(self.metrics.box_thickness)),
     );
@@ -2513,7 +2517,7 @@ fn draw_octant(self: Box, canvas: *font.sprite.Canvas, cp: u32) void {
     const octants: [octants_len]Octant = comptime octants: {
         @setEvalBranchQuota(10_000);
 
-        var result: [octants_len]Octant = .{.{}} ** octants_len;
+        var result: [octants_len]Octant = .{Octant{}} ** octants_len;
         var i: usize = 0;
 
         const data = @embedFile("octants.txt");
@@ -2678,7 +2682,9 @@ fn draw_arc(
 
     var ctx = try canvas.getContext();
     defer ctx.deinit();
-    ctx.setSource(.{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } });
+    ctx.setSource(.{ .opaque_pattern = .{
+        .pixel = .{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } },
+    } });
     ctx.setLineWidth(float_thick);
     ctx.setLineCapMode(.round);
 
@@ -2970,8 +2976,9 @@ fn draw_separated_block_quadrant(self: Box, canvas: *font.sprite.Canvas, comptim
 
     var ctx = try canvas.getContext();
     defer ctx.deinit();
-    ctx.setSource(.{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } });
-
+    ctx.setSource(.{ .opaque_pattern = .{
+        .pixel = .{ .alpha8 = .{ .a = @intFromEnum(Shade.on) } },
+    } });
     const gap: f64 = @max(1.0, @as(f64, @floatFromInt(self.metrics.cell_width)) * 0.10) / 2.0;
     const left: f64 = gap;
     const right = @as(f64, @floatFromInt(self.metrics.cell_width)) - gap;

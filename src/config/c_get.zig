@@ -53,21 +53,21 @@ fn getValue(ptr_raw: *anyopaque, value: anytype) bool {
         },
 
         else => |T| switch (@typeInfo(T)) {
-            .Optional => {
+            .optional => {
                 // If an optional has no value we return false.
                 const unwrapped = value orelse return false;
                 return getValue(ptr_raw, unwrapped);
             },
 
-            .Enum => {
+            .@"enum" => {
                 const ptr: *[*:0]const u8 = @ptrCast(@alignCast(ptr_raw));
                 ptr.* = @tagName(value);
             },
 
-            .Struct => |info| {
+            .@"struct" => |info| {
                 // If the struct implements cval then we call then.
                 if (@hasDecl(T, "cval")) {
-                    const PtrT = @typeInfo(@TypeOf(T.cval)).Fn.return_type.?;
+                    const PtrT = @typeInfo(@TypeOf(T.cval)).@"fn".return_type.?;
                     const ptr: *PtrT = @ptrCast(@alignCast(ptr_raw));
                     ptr.* = value.cval();
                     return true;
@@ -84,9 +84,9 @@ fn getValue(ptr_raw: *anyopaque, value: anytype) bool {
                 ptr.* = @intCast(@as(Backing, @bitCast(value)));
             },
 
-            .Union => |_| {
+            .@"union" => |_| {
                 if (@hasDecl(T, "cval")) {
-                    const PtrT = @typeInfo(@TypeOf(T.cval)).Fn.return_type.?;
+                    const PtrT = @typeInfo(@TypeOf(T.cval)).@"fn".return_type.?;
                     const ptr: *PtrT = @ptrCast(@alignCast(ptr_raw));
                     ptr.* = value.cval();
                     return true;

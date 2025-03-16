@@ -82,7 +82,7 @@ fn setupShell(
         // If we're running "/bin/bash" on Darwin, we can assume
         // we're using Apple's Bash because /bin is non-writable
         // on modern macOS due to System Integrity Protection.
-        if (comptime builtin.target.isDarwin()) {
+        if (comptime builtin.target.os.tag.isDarwin()) {
             if (std.mem.eql(u8, "/bin/bash", command)) {
                 return null;
             }
@@ -137,7 +137,7 @@ test "force shell" {
     var env = EnvMap.init(alloc);
     defer env.deinit();
 
-    inline for (@typeInfo(Shell).Enum.fields) |field| {
+    inline for (@typeInfo(Shell).@"enum".fields) |field| {
         const shell = @field(Shell, field.name);
         const result = try setup(alloc, ".", "sh", &env, shell, .{});
         try testing.expectEqual(shell, result.?.shell);

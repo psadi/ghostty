@@ -27,7 +27,7 @@ pub fn genConfig(writer: anytype, cli: bool) !void {
     );
 
     @setEvalBranchQuota(3000);
-    inline for (@typeInfo(Config).Struct.fields) |field| {
+    inline for (@typeInfo(Config).@"struct".fields) |field| {
         if (field.name[0] == '_') continue;
 
         try writer.writeAll("**`");
@@ -56,7 +56,7 @@ pub fn genActions(writer: anytype) !void {
         \\
     );
 
-    inline for (@typeInfo(Action).Enum.fields) |field| {
+    inline for (@typeInfo(Action).@"enum".fields) |field| {
         const action = std.meta.stringToEnum(Action, field.name).?;
 
         switch (action) {
@@ -92,9 +92,9 @@ pub fn genKeybindActions(writer: anytype) !void {
     );
 
     const info = @typeInfo(KeybindAction);
-    std.debug.assert(info == .Union);
+    std.debug.assert(info == .@"union");
 
-    inline for (info.Union.fields) |field| {
+    inline for (info.@"union".fields) |field| {
         if (field.name[0] == '_') continue;
 
         try writer.writeAll("**`");

@@ -42,7 +42,7 @@ pub fn Stream(comptime Handler: type) type {
         // We use T with @hasDecl so it needs to be a struct. Unwrap the
         // pointer if we were given one.
         const T = switch (@typeInfo(Handler)) {
-            .Pointer => |p| p.child,
+            .pointer => |p| p.child,
             else => Handler,
         };
 

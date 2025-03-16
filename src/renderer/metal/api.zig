@@ -34,7 +34,7 @@ pub const MTLResourceOptions = packed struct(c_ulong) {
     hazard_tracking_mode: HazardTrackingMode = .default,
 
     _pad: @Type(.{
-        .Int = .{ .signedness = .unsigned, .bits = @bitSizeOf(c_ulong) - 10 },
+        .int = .{ .signedness = .unsigned, .bits = @bitSizeOf(c_ulong) - 10 },
     }) = 0,
 
     pub const CPUCacheMode = enum(u4) {

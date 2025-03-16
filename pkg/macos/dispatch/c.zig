@@ -1,3 +1,1 @@
-pub const c = @cImport({
-    @cInclude("dispatch/dispatch.h");
-});
+pub const c = @import("../main.zig").c;

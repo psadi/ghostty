@@ -5,6 +5,7 @@
 .DS_Store
 .vscode/
 .direnv/
+.envrc.local
 .flatpak-builder/
 zig-cache/
 .zig-cache/

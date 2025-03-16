@@ -132,13 +132,13 @@ pub fn getOffset(
 fn intFromBase(base: anytype) usize {
     const T = @TypeOf(base);
     return switch (@typeInfo(T)) {
-        .Pointer => |v| switch (v.size) {
-            .One,
-            .Many,
-            .C,
+        .pointer => |v| switch (v.size) {
+            .one,
+            .many,
+            .c,
             => @intFromPtr(base),
 
-            .Slice => @intFromPtr(base.ptr),
+            .slice => @intFromPtr(base.ptr),
         },
 
         else => switch (T) {

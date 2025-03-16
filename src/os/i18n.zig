@@ -24,6 +24,7 @@ const log = std.log.scoped(.i18n);
 ///   3. Most preferred locale for a language without a country code.
 ///
 pub const locales = [_][:0]const u8{
+    "de_DE.UTF-8",
     "zh_CN.UTF-8",
 };
 
@@ -147,7 +148,7 @@ extern fn dgettext(domainname: [*:0]const u8, msgid: [*:0]const u8) [*:0]const u
 extern fn _libintl_locale_name_canonicalize(name: [*:0]u8) void;
 
 test "canonicalizeLocale darwin" {
-    if (!builtin.target.isDarwin()) return error.SkipZigTest;
+    if (!builtin.target.os.tag.isDarwin()) return error.SkipZigTest;
 
     const testing = std.testing;
     var buf: [256]u8 = undefined;

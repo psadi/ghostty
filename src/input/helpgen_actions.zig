@@ -73,7 +73,7 @@ pub fn generate(
     var buffer = std.ArrayList(u8).init(page_allocator);
     defer buffer.deinit();
 
-    const fields = @typeInfo(KeybindAction).Union.fields;
+    const fields = @typeInfo(KeybindAction).@"union".fields;
     inline for (fields) |field| {
         if (field.name[0] == '_') continue;
 

@@ -103,7 +103,7 @@ size_t DecodeUTF8UntilControlSeqImpl(D d,
   if (i != count) {
     const hn::CappedTag<T, 1> d1;
     using D1 = decltype(d1);
-    const hn::Vec<D1> esc1 = Set(d1, GetLane(esc_vec));
+    const hn::Vec<D1> esc1 = Set(d1, hn::GetLane(esc_vec));
     for (; i < count; ++i) {
       const hn::Vec<D1> input_vec = hn::LoadU(d1, input + i);
       const auto esc_idx = IndexOfChunk(d1, esc1, input_vec);

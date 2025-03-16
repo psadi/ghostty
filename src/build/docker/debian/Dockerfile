@@ -28,7 +28,7 @@ RUN . /etc/os-release; if [ $VERSION_ID -le 12 ]; then ln -s libbz2.so /usr/lib/
 
 # Install zig
 # https://ziglang.org/download/
-ARG ZIG_VERSION="0.13.0"
+ARG ZIG_VERSION="0.14.0"
 RUN wget -q "https://ziglang.org/download/$ZIG_VERSION/zig-linux-$(uname -m)-$ZIG_VERSION.tar.xz" && \
     tar -xf "zig-linux-$(uname -m)-$ZIG_VERSION.tar.xz" -C /opt && \
     rm zig-linux-* && \

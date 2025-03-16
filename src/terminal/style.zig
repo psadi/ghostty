@@ -343,7 +343,7 @@ pub const Set = RefCountedSet(
 test "Set basic usage" {
     const testing = std.testing;
     const alloc = testing.allocator;
-    const layout = Set.layout(16);
+    const layout: Set.Layout = .init(16);
     const buf = try alloc.alignedAlloc(u8, Set.base_align, layout.total_size);
     defer alloc.free(buf);
 
@@ -397,5 +397,5 @@ test "Set basic usage" {
 
 test "Set capacities" {
     // We want to support at least this many styles without overflowing.
-    _ = Set.layout(16384);
+    _ = Set.Layout.init(16384);
 }

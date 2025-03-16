@@ -390,7 +390,7 @@ fn renderScreenWindow(self: *Inspector) void {
 
             if (kitty_flags.int() != 0) {
                 const Flags = @TypeOf(kitty_flags);
-                inline for (@typeInfo(Flags).Struct.fields) |field| {
+                inline for (@typeInfo(Flags).@"struct".fields) |field| {
                     {
                         const value = @field(kitty_flags, field.name);
 
@@ -602,7 +602,7 @@ fn renderModesWindow(self: *Inspector) void {
     }
 
     const t = self.surface.renderer_state.terminal;
-    inline for (@typeInfo(terminal.Mode).Enum.fields) |field| {
+    inline for (@typeInfo(terminal.Mode).@"enum".fields) |field| {
         const tag: terminal.modes.ModeTag = @bitCast(@as(terminal.modes.ModeTag.Backing, field.value));
 
         cimgui.c.igTableNextRow(cimgui.c.ImGuiTableRowFlags_None, 0);
@@ -1298,7 +1298,7 @@ fn renderTermioWindow(self: *Inspector) void {
             );
             defer cimgui.c.igEndTable();
 
-            inline for (@typeInfo(terminal.Parser.Action.Tag).Enum.fields) |field| {
+            inline for (@typeInfo(terminal.Parser.Action.Tag).@"enum".fields) |field| {
                 const tag = @field(terminal.Parser.Action.Tag, field.name);
                 if (tag == .apc_put or tag == .dcs_put) continue;
 

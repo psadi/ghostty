@@ -70,7 +70,7 @@ size_t IndexOfImpl(D d, T needle, const T* HWY_RESTRICT input, size_t count) {
     using D1 = decltype(d1);
 
     // Get an equally sized needle vector with only one lane.
-    const hn::Vec<D1> needle1 = Set(d1, GetLane(needle_vec));
+    const hn::Vec<D1> needle1 = Set(d1, hn::GetLane(needle_vec));
 
     // Go through the remaining elements and do similar logic to
     // the previous loop to find any matches.

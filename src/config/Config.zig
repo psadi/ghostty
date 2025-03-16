@@ -2801,7 +2801,7 @@ pub fn changeConditionalState(
     // If the conditional state between the old and new is the same,
     // then we don't need to do anything.
     relevant: {
-        inline for (@typeInfo(conditional.Key).Enum.fields) |field| {
+        inline for (@typeInfo(conditional.Key).@"enum".fields) |field| {
             const key: conditional.Key = @field(conditional.Key, field.name);
 
             // Conditional set contains the keys that this config uses. So we
@@ -2849,7 +2849,7 @@ fn expandPaths(self: *Config, base: []const u8) !void {
     );
 
     // Expand all of our paths
-    inline for (@typeInfo(Config).Struct.fields) |field| {
+    inline for (@typeInfo(Config).@"struct".fields) |field| {
         switch (field.type) {
             RepeatablePath, Path => {
                 try @field(self, field.name).expand(
@@ -3023,7 +3023,7 @@ pub fn finalize(self: *Config) !void {
     // to look up defaults which is kind of expensive. We only do this
     // on desktop.
     const wd_home = std.mem.eql(u8, "home", wd);
-    if ((comptime !builtin.target.isWasm()) and
+    if ((comptime !builtin.target.cpu.arch.isWasm()) and
         (comptime !builtin.is_test))
     {
         if (self.command == null or wd_home) command: {
@@ -3239,7 +3239,7 @@ pub fn clone(
     const alloc_arena = result._arena.?.allocator();
 
     // Copy our values
-    inline for (@typeInfo(Config).Struct.fields) |field| {
+    inline for (@typeInfo(Config).@"struct".fields) |field| {
         if (!@hasField(Key, field.name)) continue;
         @field(result, field.name) = try cloneValue(
             alloc_arena,
@@ -3286,26 +3286,26 @@ fn cloneValue(
     // If we're a type that can have decls and we have clone, then
     // call clone and be done.
     const t = @typeInfo(T);
-    if (t == .Struct or t == .Enum or t == .Union) {
+    if (t == .@"struct" or t == .@"enum" or t == .@"union") {
         if (@hasDecl(T, "clone")) return try src.clone(alloc);
     }
 
     // Back into types of types
     switch (t) {
-        inline .Bool,
-        .Int,
-        .Float,
-        .Enum,
-        .Union,
+        inline .bool,
+        .int,
+        .float,
+        .@"enum",
+        .@"union",
         => return src,
 
-        .Optional => |info| return try cloneValue(
+        .optional => |info| return try cloneValue(
             alloc,
             info.child,
             src orelse return null,
         ),
 
-        .Struct => |info| {
+        .@"struct" => |info| {
             // Packed structs we can return directly as copies.
             assert(info.layout == .@"packed");
             return src;
@@ -3390,21 +3390,21 @@ fn equalField(comptime T: type, old: T, new: T) bool {
 
     // Back into types of types
     switch (@typeInfo(T)) {
-        .Void => return true,
+        .void => return true,
 
-        inline .Bool,
-        .Int,
-        .Float,
-        .Enum,
+        inline .bool,
+        .int,
+        .float,
+        .@"enum",
         => return old == new,
 
-        .Optional => |info| {
+        .optional => |info| {
             if (old == null and new == null) return true;
             if (old == null or new == null) return false;
             return equalField(info.child, old.?, new.?);
         },
 
-        .Struct => |info| {
+        .@"struct" => |info| {
             if (@hasDecl(T, "equal")) return old.equal(new);
 
             // If a struct doesn't declare an "equal" function, we fall back
@@ -3419,7 +3419,7 @@ fn equalField(comptime T: type, old: T, new: T) bool {
             return true;
         },
 
-        .Union => |info| {
+        .@"union" => |info| {
             const tag_type = info.tag_type.?;
             const old_tag = std.meta.activeTag(old);
             const new_tag = std.meta.activeTag(new);
@@ -4293,7 +4293,7 @@ pub const Keybinds = struct {
             // The order of these blocks is important. The *last* added keybind for a given action is
             // what will display in the menu. We want the more typical keybinds after this block to be
             // the standard
-            if (!builtin.target.isDarwin()) {
+            if (!builtin.target.os.tag.isDarwin()) {
                 try self.set.put(
                     alloc,
                     .{ .key = .{ .translated = .insert }, .mods = .{ .ctrl = true } },
@@ -4308,7 +4308,7 @@ pub const Keybinds = struct {
 
             // On macOS we default to super but Linux ctrl+shift since
             // ctrl+c is to kill the process.
-            const mods: inputpkg.Mods = if (builtin.target.isDarwin())
+            const mods: inputpkg.Mods = if (builtin.target.os.tag.isDarwin())
                 .{ .super = true }
             else
                 .{ .ctrl = true, .shift = true };
@@ -4426,7 +4426,7 @@ pub const Keybinds = struct {
         );
 
         // Windowing
-        if (comptime !builtin.target.isDarwin()) {
+        if (comptime !builtin.target.os.tag.isDarwin()) {
             try self.set.put(
                 alloc,
                 .{ .key = .{ .translated = .n }, .mods = .{ .ctrl = true, .shift = true } },
@@ -4603,7 +4603,7 @@ pub const Keybinds = struct {
         {
             // On macOS we default to super but everywhere else
             // is alt.
-            const mods: inputpkg.Mods = if (builtin.target.isDarwin())
+            const mods: inputpkg.Mods = if (builtin.target.os.tag.isDarwin())
                 .{ .super = true }
             else
                 .{ .alt = true };
@@ -4621,7 +4621,7 @@ pub const Keybinds = struct {
                         // want to be true on other platforms as well but this
                         // is definitely true on macOS so we just do it here for
                         // now (#817)
-                        .key = if (comptime builtin.target.isDarwin())
+                        .key = if (comptime builtin.target.os.tag.isDarwin())
                             .{ .physical = @enumFromInt(i) }
                         else
                             .{ .translated = @enumFromInt(i) },
@@ -4634,7 +4634,7 @@ pub const Keybinds = struct {
             try self.set.put(
                 alloc,
                 .{
-                    .key = if (comptime builtin.target.isDarwin())
+                    .key = if (comptime builtin.target.os.tag.isDarwin())
                         .{ .physical = .nine }
                     else
                         .{ .translated = .nine },
@@ -4659,7 +4659,7 @@ pub const Keybinds = struct {
         );
 
         // Mac-specific keyboard bindings.
-        if (comptime builtin.target.isDarwin()) {
+        if (comptime builtin.target.os.tag.isDarwin()) {
             try self.set.put(
                 alloc,
                 .{ .key = .{ .translated = .q }, .mods = .{ .super = true } },
@@ -4995,7 +4995,7 @@ pub const Keybinds = struct {
             if (docs) {
                 try formatter.writer.writeAll("\n");
                 const name = @tagName(v);
-                inline for (@typeInfo(help_strings.KeybindAction).Struct.decls) |decl| {
+                inline for (@typeInfo(help_strings.KeybindAction).@"struct".decls) |decl| {
                     if (std.mem.eql(u8, decl.name, name)) {
                         const help = @field(help_strings.KeybindAction, decl.name);
                         try formatter.writer.writeAll("# " ++ decl.name ++ "\n");

@@ -148,7 +148,7 @@ pub const Action = union(enum) {
     ) !void {
         _ = layout;
         const T = Action;
-        const info = @typeInfo(T).Union;
+        const info = @typeInfo(T).@"union";
 
         try writer.writeAll(@typeName(T));
         if (info.tag_type) |TagType| {

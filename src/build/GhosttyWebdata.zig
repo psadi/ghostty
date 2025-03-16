@@ -19,7 +19,7 @@ pub fn init(
         const webgen_config = b.addExecutable(.{
             .name = "webgen_config",
             .root_source_file = b.path("src/main.zig"),
-            .target = b.host,
+            .target = b.graph.host,
         });
         deps.help_strings.addImport(webgen_config);
 
@@ -48,7 +48,7 @@ pub fn init(
         const webgen_actions = b.addExecutable(.{
             .name = "webgen_actions",
             .root_source_file = b.path("src/main.zig"),
-            .target = b.host,
+            .target = b.graph.host,
         });
         deps.help_strings.addImport(webgen_actions);
 
@@ -77,7 +77,7 @@ pub fn init(
         const webgen_commands = b.addExecutable(.{
             .name = "webgen_commands",
             .root_source_file = b.path("src/main.zig"),
-            .target = b.host,
+            .target = b.graph.host,
         });
         deps.help_strings.addImport(webgen_commands);
 

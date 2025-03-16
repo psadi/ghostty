@@ -90,8 +90,7 @@ pub fn init(b: *std.Build, cfg: *const Config) !GhosttyResources {
     }
 
     // Themes
-    {
-        const upstream = b.dependency("iterm2_themes", .{});
+    if (b.lazyDependency("iterm2_themes", .{})) |upstream| {
         const install_step = b.addInstallDirectory(.{
             .source_dir = upstream.path("ghostty"),
             .install_dir = .{ .custom = "share" },

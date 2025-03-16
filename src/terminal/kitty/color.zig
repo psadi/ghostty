@@ -30,7 +30,7 @@ pub const Special = enum {
 };
 
 pub const Kind = union(enum) {
-    pub const max: usize = std.math.maxInt(u8) + @typeInfo(Special).Enum.fields.len;
+    pub const max: usize = std.math.maxInt(u8) + @typeInfo(Special).@"enum".fields.len;
 
     palette: u8,
     special: Special,
